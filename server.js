@@ -35,6 +35,12 @@ if (!naverConfigured) {
 
 const app = express();
 app.disable("x-powered-by");
+
+// Render 등 리버스 프록시 뒤(https)에서는 trust proxy 를 켜야
+// secure 쿠키(세션)가 정상 발급됩니다. (X-Forwarded-Proto 신뢰)
+const behindHttpsProxy = String(NAVER_CALLBACK_URL || "").startsWith("https://");
+if (behindHttpsProxy) app.set("trust proxy", 1);
+
 app.use(express.json({ limit: "64kb" }));
 
 app.use(
@@ -46,7 +52,7 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: "lax",
-      secure: String(NAVER_CALLBACK_URL || "").startsWith("https://"),
+      secure: behindHttpsProxy,
       maxAge: 1000 * 60 * 60 * 24 * 30, // 30일
     },
   })

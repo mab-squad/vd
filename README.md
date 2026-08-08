@@ -56,12 +56,34 @@ npm start              # http://localhost:3000
 - 네이버 API 특성상 **"우리 앱 → 네이버" 한 방향(등록)만** 지원됩니다. 네이버의 일정을 읽어오는 양방향 동기화는 제공되지 않습니다.
 - 같은 일정을 네이버 등록 버튼으로 여러 번 누르면 중복 등록됩니다.
 
+## Render로 배포하기
+
+이 저장소에는 Render Blueprint(`render.yaml`)가 포함되어 있어 배포가 간단합니다.
+
+1. [Render](https://render.com) 가입 후 GitHub 계정을 연결합니다.
+2. **New → Blueprint** → 이 저장소(`mab-squad/vd`) 선택 → 브랜치 지정 → `render.yaml` 자동 인식 → **Apply**.
+   - `SESSION_SECRET` 은 Render가 자동 생성합니다.
+   - `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `NAVER_CALLBACK_URL` 은 비워둔 채 먼저 배포해도 됩니다. (그 상태에선 네이버 버튼만 숨겨지고 나머지는 정상 동작)
+3. 배포가 끝나면 서비스 주소가 발급됩니다: `https://<서비스이름>.onrender.com`
+4. **네이버 개발자센터**에서 앱 설정을 이 주소로 바꿉니다.
+   - 서비스 URL: `https://<서비스이름>.onrender.com`
+   - Callback URL: `https://<서비스이름>.onrender.com/api/naver/callback`
+5. **Render 대시보드 → 서비스 → Environment** 에서 값 입력 후 저장(자동 재배포):
+   - `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`
+   - `NAVER_CALLBACK_URL = https://<서비스이름>.onrender.com/api/naver/callback` (4번 값과 정확히 일치)
+6. 재배포 후 앱 상단 **"네이버 연결"** 로그인 → 일정 창의 **"📅 네이버 등록"** 사용.
+
+> **무료 플랜 참고**
+> - 일정 시간 접속이 없으면 서비스가 잠들어, 다음 접속 시 첫 로딩이 ~50초 걸릴 수 있습니다.
+> - 세션이 서버 메모리에 저장되어 서버가 재시작(잠들었다 깨어남/재배포)되면 네이버 로그인이 풀려 다시 연결해야 합니다. (일정·할 일 데이터는 브라우저에 있으므로 영향 없음)
+
 ## 프로젝트 구조
 
 ```
 public/index.html   프론트엔드 (단일 파일, 서버 없이도 동작)
 server.js           Express 서버 (정적 제공 + 네이버 OAuth/일정등록 프록시)
 package.json        의존성 (express, express-session)
+render.yaml         Render 배포 Blueprint
 .env.example        환경변수 예시
 ```
 
