@@ -163,8 +163,10 @@ function buildIcs(ev) {
   ];
 
   if (ev.allday) {
+    // 종일 일정: DTEND 는 마지막 날의 "다음 날"(exclusive). 여러 날에 걸치면 종료일 사용.
+    var endBase = (ev.endDate && ev.endDate >= ev.date) ? ev.endDate : ev.date;
     lines.push("DTSTART;VALUE=DATE:" + dateOnly(ev.date));
-    lines.push("DTEND;VALUE=DATE:" + nextDay(ev.date));
+    lines.push("DTEND;VALUE=DATE:" + nextDay(endBase));
   } else {
     lines.push("DTSTART;TZID=Asia/Seoul:" + localStamp(ev.date, ev.time));
     // 종료 시각 미지정 시 1시간짜리 일정으로 생성

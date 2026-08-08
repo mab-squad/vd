@@ -182,7 +182,7 @@
   .search input { flex: 1; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
   .lrow { display: flex; align-items: center; gap: 12px; padding: 10px 6px; border-bottom: 1px solid var(--border-soft); cursor: pointer; border-radius: 8px; }
   .lrow:hover { background: var(--panel-2); }
-  .lrow .ldate { width: 92px; flex: none; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .lrow .ldate { width: 132px; flex: none; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .lrow .ldot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
   .lrow .ltitle { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lrow .ltime { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -303,12 +303,16 @@
     </div>
     <div class="row2">
       <div class="field">
-        <label>날짜</label>
+        <label id="fDateLabel">날짜</label>
         <input type="date" id="fDate" />
       </div>
       <div class="field" id="timeWrap">
         <label>시간</label>
         <input type="time" id="fTime" />
+      </div>
+      <div class="field" id="endWrap" style="display:none">
+        <label>종료일</label>
+        <input type="date" id="fEndDate" />
       </div>
     </div>
     <div class="field">
@@ -442,17 +446,33 @@
   }
 
   // Recurrence
+  function daysBetween(a, b){ return Math.round((startOfDay(b) - startOfDay(a)) / 864e5); }
   function occursOn(ev, d) {
-    var start = parseYmd(ev.date);
-    if (d < startOfDay(start)) return false;
+    var start = startOfDay(parseYmd(ev.date));
+    var dd = startOfDay(d);
+    if (dd < start) return false;
+    // 종일 일정의 기간(일수). 종료일이 시작일보다 뒤면 그만큼 여러 날에 걸침.
+    var span = 0;
+    if (ev.allday && ev.endDate) { var sp = daysBetween(start, startOfDay(parseYmd(ev.endDate))); if (sp > 0) span = sp; }
+    function within(inst){ return dd >= inst && dd <= addDays(inst, span); }
     switch (ev.repeat) {
       case "daily": return true;
-      case "weekly": return d.getDay() === start.getDay();
-      case "biweekly":
-        if (d.getDay() !== start.getDay()) return false;
-        return Math.round((startOfDay(d) - startOfDay(start)) / (7*864e5)) % 2 === 0;
-      case "monthly": return d.getDate() === start.getDate();
-      default: return sameDay(d, start);
+      case "weekly": {
+        var k = Math.floor(daysBetween(start, dd) / 7);
+        return within(addDays(start, k*7)) || within(addDays(start, (k-1)*7));
+      }
+      case "biweekly": {
+        var k2 = Math.floor(daysBetween(start, dd) / 7); k2 -= (k2 % 2);
+        return within(addDays(start, k2*7)) || within(addDays(start, (k2-2)*7));
+      }
+      case "monthly": {
+        var c1 = new Date(dd.getFullYear(), dd.getMonth(), start.getDate());
+        var c2 = new Date(dd.getFullYear(), dd.getMonth()-1, start.getDate());
+        if (c1.getDate()===start.getDate() && within(startOfDay(c1))) return true;
+        if (c2.getDate()===start.getDate() && within(startOfDay(c2))) return true;
+        return false;
+      }
+      default: return within(start);
     }
   }
   function eventsOn(d) {
@@ -789,8 +809,10 @@
       var row = document.createElement("div"); row.className = "lrow";
       var rep = ev.repeat && ev.repeat!=="none" ? '<span class="lrep">'+repeatLabel(ev.repeat)+'</span>' : "";
       var clip = (ev.attachments && ev.attachments.length) ? " 📎" : "";
+      var dateStr = (d.getMonth()+1)+"/"+d.getDate()+" ("+DOW[d.getDay()]+")";
+      if (ev.allday && ev.endDate && ev.endDate !== ev.date) { var ed = parseYmd(ev.endDate); dateStr += " ~ " + (ed.getMonth()+1)+"/"+ed.getDate(); }
       row.innerHTML =
-        '<span class="ldate">'+(d.getMonth()+1)+"/"+d.getDate()+" ("+DOW[d.getDay()]+")"+'</span>' +
+        '<span class="ldate">'+dateStr+'</span>' +
         '<span class="ldot" style="background:'+eventColor(ev)+'"></span>' +
         '<span class="ltitle">'+escapeHtml(ev.title)+clip+'</span>' +
         '<span class="ltime">'+(ev.allday?"종일":(ev.time||""))+'</span>' + rep;
@@ -906,6 +928,7 @@
     el("evModalTitle").textContent = "일정 추가";
     el("fTitle").value = "";
     el("fDate").value = ymd(date || selectedDay);
+    el("fEndDate").value = ymd(date || selectedDay);
     el("fTime").value = time || "09:00";
     el("fAllday").checked = false;
     el("fRepeat").value = "none";
@@ -925,6 +948,7 @@
     el("evModalTitle").textContent = "일정 수정";
     el("fTitle").value = ev.title;
     el("fDate").value = ev.date;
+    el("fEndDate").value = ev.endDate || ev.date;
     el("fTime").value = ev.time || "09:00";
     el("fAllday").checked = !!ev.allday;
     el("fRepeat").value = ev.repeat || "none";
@@ -941,9 +965,14 @@
     var title = el("fTitle").value.trim();
     if (!title) { el("fTitle").focus(); return; }
     var id = editingId || uid();
+    var allday = el("fAllday").checked;
+    var startDate = el("fDate").value;
+    var endDate = el("fEndDate").value || startDate;
+    if (allday && endDate < startDate) endDate = startDate; // 종료일이 앞서면 시작일로 맞춤
     var data = {
-      id: id, title: title, memberId: pickedMember(), date: el("fDate").value,
-      allday: el("fAllday").checked, time: el("fAllday").checked ? "" : el("fTime").value,
+      id: id, title: title, memberId: pickedMember(), date: startDate,
+      endDate: allday ? endDate : "",
+      allday: allday, time: allday ? "" : el("fTime").value,
       repeat: el("fRepeat").value, note: el("fNote").value.trim(),
       attachments: modalAttachments.map(function(a){ return { id:a.id, name:a.name, type:a.type, size:a.size, thumb:a.thumb||null }; })
     };
@@ -968,7 +997,15 @@
     state.events = state.events.filter(function(e){ return e.id !== editingId; });
     save(); closeOverlay("evOverlay"); render();
   }
-  function syncAllday() { el("timeWrap").style.visibility = el("fAllday").checked ? "hidden" : "visible"; }
+  function syncAllday() {
+    var allday = el("fAllday").checked;
+    el("timeWrap").style.display = allday ? "none" : "";
+    el("endWrap").style.display = allday ? "" : "none";
+    el("fDateLabel").textContent = allday ? "시작일" : "날짜";
+    if (allday) {
+      if (!el("fEndDate").value || el("fEndDate").value < el("fDate").value) el("fEndDate").value = el("fDate").value;
+    }
+  }
 
   // ---------- Members modal ----------
   function renderMemList() {
@@ -1063,8 +1100,11 @@
   function naverRegisterCurrent() {
     var title = el("fTitle").value.trim();
     if (!title) { el("fTitle").focus(); return; }
-    var payload = { title: title, date: el("fDate").value, allday: el("fAllday").checked,
-      time: el("fAllday").checked ? "" : el("fTime").value, repeat: el("fRepeat").value, note: el("fNote").value.trim() };
+    var _allday = el("fAllday").checked;
+    var _end = el("fEndDate").value || el("fDate").value;
+    if (_allday && _end < el("fDate").value) _end = el("fDate").value;
+    var payload = { title: title, date: el("fDate").value, endDate: _allday ? _end : "", allday: _allday,
+      time: _allday ? "" : el("fTime").value, repeat: el("fRepeat").value, note: el("fNote").value.trim() };
     var btn = el("evNaver"); var prev = btn.textContent; btn.disabled = true; btn.textContent = "등록 중…";
     fetch("/api/naver/schedule", { method: "POST", credentials: "same-origin",
       headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
