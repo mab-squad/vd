@@ -208,6 +208,16 @@
   .modal-actions { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
   .allday { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 
+  /* Attachments */
+  .attach-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .attach-list:empty { display: none; }
+  .att { position: relative; display: flex; align-items: center; gap: 6px; max-width: 160px; border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px 4px 4px; background: var(--bg); cursor: pointer; font-size: 12px; }
+  .att img { width: 34px; height: 34px; object-fit: cover; border-radius: 5px; flex: none; }
+  .att .fic { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex: none; }
+  .att .an { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .att .ax { border: 0; background: rgba(0,0,0,.55); color: #fff; border-radius: 50%; width: 16px; height: 16px; font-size: 10px; line-height: 16px; padding: 0; position: absolute; top: -6px; right: -6px; cursor: pointer; }
+  .att-hint { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
   .fab { position: fixed; right: 20px; bottom: 20px; z-index: 40; width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--accent); color: #fff; font-size: 28px; cursor: pointer; box-shadow: 0 6px 20px rgba(79,70,229,.45); line-height: 1; }
   .hidden { display: none !important; }
   .foot { text-align: center; color: var(--muted); font-size: 12px; margin-top: 16px; }
@@ -315,6 +325,13 @@
       <label>메모</label>
       <textarea id="fNote" placeholder="장소, 준비물 등"></textarea>
     </div>
+    <div class="field" id="attField">
+      <label>첨부 (사진·파일)</label>
+      <div class="attach-list" id="fAttach"></div>
+      <button type="button" class="btn" id="attAddBtn">＋ 사진/파일 추가</button>
+      <input type="file" id="attInput" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.hwp" multiple class="hidden" />
+      <div class="att-hint">사진은 자동 압축됩니다. 첨부는 이 브라우저에 저장되며 백업에 포함됩니다. (파일당 15MB)</div>
+    </div>
     <div class="modal-actions">
       <button class="btn" id="evDelete" style="color:#ef4444">삭제</button>
       <button class="btn" id="evNaver" title="이 일정을 네이버 캘린더에 등록" style="display:none">📅 네이버 등록</button>
@@ -366,6 +383,9 @@
   var activeFilter = null;             // Set of visible member ids; null = all
   var editingId = null;
   var searchQuery = "";
+  var modalAttachments = [];   // attachments currently shown in the open modal
+  var modalRemovedAtt = [];    // ids of existing attachments to delete on save
+  var IDB_OK = (typeof indexedDB !== "undefined");
 
   function defaultState() {
     return {
@@ -568,7 +588,8 @@
     var d = document.createElement("div");
     d.className = "ev"; d.dataset.id = ev.id; d.setAttribute("style", evVars(ev));
     var time = ev.allday ? "" : '<span class="t">'+ (ev.time||"") +'</span>';
-    d.innerHTML = time + escapeHtml(ev.title);
+    var clip = (ev.attachments && ev.attachments.length) ? "📎" : "";
+    d.innerHTML = time + escapeHtml(ev.title) + clip;
     return d;
   }
 
@@ -767,13 +788,100 @@
       var d = parseYmd(ev.date);
       var row = document.createElement("div"); row.className = "lrow";
       var rep = ev.repeat && ev.repeat!=="none" ? '<span class="lrep">'+repeatLabel(ev.repeat)+'</span>' : "";
+      var clip = (ev.attachments && ev.attachments.length) ? " 📎" : "";
       row.innerHTML =
         '<span class="ldate">'+(d.getMonth()+1)+"/"+d.getDate()+" ("+DOW[d.getDay()]+")"+'</span>' +
         '<span class="ldot" style="background:'+eventColor(ev)+'"></span>' +
-        '<span class="ltitle">'+escapeHtml(ev.title)+'</span>' +
+        '<span class="ltitle">'+escapeHtml(ev.title)+clip+'</span>' +
         '<span class="ltime">'+(ev.allday?"종일":(ev.time||""))+'</span>' + rep;
       row.onclick = function(){ openEdit(ev.id); };
       body.appendChild(row);
+    });
+  }
+
+  // ---------- Attachments (IndexedDB) ----------
+  var _db = null;
+  function idb() {
+    return new Promise(function(res, rej){
+      if (_db) return res(_db);
+      var r = indexedDB.open("family_schedule_files", 1);
+      r.onupgradeneeded = function(){ if (!r.result.objectStoreNames.contains("attachments")) r.result.createObjectStore("attachments", { keyPath: "id" }); };
+      r.onsuccess = function(){ _db = r.result; res(_db); };
+      r.onerror = function(){ rej(r.error); };
+    });
+  }
+  function idbPut(rec){ return idb().then(function(db){ return new Promise(function(res,rej){ var tx=db.transaction("attachments","readwrite"); tx.objectStore("attachments").put(rec); tx.oncomplete=function(){res();}; tx.onerror=function(){rej(tx.error);}; }); }); }
+  function idbGet(id){ return idb().then(function(db){ return new Promise(function(res,rej){ var tx=db.transaction("attachments","readonly"); var rq=tx.objectStore("attachments").get(id); rq.onsuccess=function(){res(rq.result);}; rq.onerror=function(){rej(rq.error);}; }); }); }
+  function idbDel(id){ return idb().then(function(db){ return new Promise(function(res,rej){ var tx=db.transaction("attachments","readwrite"); tx.objectStore("attachments").delete(id); tx.oncomplete=function(){res();}; tx.onerror=function(){rej(tx.error);}; }); }); }
+  function idbAll(){ return idb().then(function(db){ return new Promise(function(res,rej){ var tx=db.transaction("attachments","readonly"); var rq=tx.objectStore("attachments").getAll(); rq.onsuccess=function(){res(rq.result||[]);}; rq.onerror=function(){rej(rq.error);}; }); }); }
+  function idbClear(){ return idb().then(function(db){ return new Promise(function(res,rej){ var tx=db.transaction("attachments","readwrite"); tx.objectStore("attachments").clear(); tx.oncomplete=function(){res();}; tx.onerror=function(){rej(tx.error);}; }); }); }
+
+  function readDataUrl(file){ return new Promise(function(res,rej){ var r=new FileReader(); r.onload=function(){res(r.result);}; r.onerror=function(){rej(r.error);}; r.readAsDataURL(file); }); }
+  function loadImage(src){ return new Promise(function(res,rej){ var i=new Image(); i.onload=function(){res(i);}; i.onerror=function(){rej(new Error("img"));}; i.src=src; }); }
+  function drawResized(img, maxDim, type, q){
+    var w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+    var scale=Math.min(1, maxDim/Math.max(w,h));
+    var cw=Math.max(1,Math.round(w*scale)), ch=Math.max(1,Math.round(h*scale));
+    var c=document.createElement("canvas"); c.width=cw; c.height=ch;
+    var ctx=c.getContext("2d");
+    if (type==="image/jpeg"){ ctx.fillStyle="#fff"; ctx.fillRect(0,0,cw,ch); }
+    ctx.drawImage(img,0,0,cw,ch);
+    var dataUrl=c.toDataURL(type, q);
+    return { dataUrl:dataUrl, type:type, size:Math.round(dataUrl.length*0.75) };
+  }
+  function processFile(file){
+    var MAXRAW = 15*1024*1024;
+    if (file.size > MAXRAW) { alert('"'+file.name+'"(이)가 너무 큽니다. 15MB 이하만 첨부할 수 있어요.'); return Promise.resolve(null); }
+    if (file.type.indexOf("image/")===0) {
+      return readDataUrl(file).then(function(src){ return loadImage(src).then(function(img){
+        var isPng = file.type.indexOf("png")>=0;
+        var full = drawResized(img, 1600, isPng?"image/png":"image/jpeg", 0.72);
+        var thumb = drawResized(img, 240, "image/jpeg", 0.6);
+        return { id:uid(), name:file.name, type:full.type, size:full.size, thumb:thumb.dataUrl, dataUrl:full.dataUrl, _new:true };
+      }); }).catch(function(){ return readDataUrl(file).then(function(src){ return { id:uid(), name:file.name, type:file.type, size:file.size, thumb:null, dataUrl:src, _new:true }; }); });
+    }
+    return readDataUrl(file).then(function(src){ return { id:uid(), name:file.name, type:file.type||"application/octet-stream", size:file.size, thumb:null, dataUrl:src, _new:true }; });
+  }
+  function addModalFiles(files){
+    var arr = Array.prototype.slice.call(files);
+    var seq = Promise.resolve();
+    arr.forEach(function(f){ seq = seq.then(function(){ return processFile(f).then(function(rec){ if (rec){ modalAttachments.push(rec); renderModalAttach(); } }); }); });
+  }
+  function renderModalAttach(){
+    var wrap = el("fAttach"); wrap.innerHTML = "";
+    modalAttachments.forEach(function(a){
+      var chip = document.createElement("div"); chip.className = "att";
+      if (a.type && a.type.indexOf("image/")===0 && a.thumb) chip.innerHTML = '<img src="'+a.thumb+'" alt="">';
+      else chip.innerHTML = '<span class="fic">📄</span>';
+      var nm = document.createElement("span"); nm.className="an"; nm.textContent = a.name; chip.appendChild(nm);
+      var del = document.createElement("button"); del.className="ax"; del.type="button"; del.textContent="✕";
+      del.onclick = function(e){ e.stopPropagation(); removeModalAttach(a.id); };
+      chip.appendChild(del);
+      chip.onclick = function(){ viewAttachment(a); };
+      wrap.appendChild(chip);
+    });
+  }
+  function removeModalAttach(id){
+    var a = modalAttachments.filter(function(x){ return x.id===id; })[0];
+    if (a && !a._new) modalRemovedAtt.push(id);
+    modalAttachments = modalAttachments.filter(function(x){ return x.id!==id; });
+    renderModalAttach();
+  }
+  function dataUrlToBlob(dataUrl){
+    var parts = dataUrl.split(","); var meta = parts[0]; var b64 = parts[1];
+    var mime = (meta.match(/:(.*?);/)||[])[1] || "application/octet-stream";
+    var bin = atob(b64); var len = bin.length; var arr = new Uint8Array(len);
+    for (var i=0;i<len;i++) arr[i]=bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  }
+  function viewAttachment(a){
+    var get = a.dataUrl ? Promise.resolve(a.dataUrl) : idbGet(a.id).then(function(r){ return r && r.dataUrl; });
+    get.then(function(dataUrl){
+      if (!dataUrl) { alert("첨부를 불러올 수 없습니다."); return; }
+      var url = URL.createObjectURL(dataUrlToBlob(dataUrl));
+      var w = window.open(url, "_blank");
+      if (!w) { var link=document.createElement("a"); link.href=url; link.download=a.name; link.click(); }
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
     });
   }
 
@@ -804,6 +912,8 @@
     el("fNote").value = "";
     renderMemberPicker(memberId || (state.members[0] && state.members[0].id));
     el("evDelete").classList.add("hidden");
+    modalAttachments = []; modalRemovedAtt = []; renderModalAttach();
+    el("attField").style.display = IDB_OK ? "" : "none";
     syncAllday(); openOverlay("evOverlay");
     setTimeout(function(){ el("fTitle").focus(); }, 50);
   }
@@ -821,26 +931,40 @@
     el("fNote").value = ev.note || "";
     renderMemberPicker(ev.memberId);
     el("evDelete").classList.remove("hidden");
+    modalAttachments = (ev.attachments || []).map(function(a){ return { id:a.id, name:a.name, type:a.type, size:a.size, thumb:a.thumb||null }; });
+    modalRemovedAtt = [];
+    el("attField").style.display = IDB_OK ? "" : "none";
+    renderModalAttach();
     syncAllday(); openOverlay("evOverlay");
   }
   function saveEvent() {
     var title = el("fTitle").value.trim();
     if (!title) { el("fTitle").focus(); return; }
+    var id = editingId || uid();
     var data = {
-      title: title, memberId: pickedMember(), date: el("fDate").value,
+      id: id, title: title, memberId: pickedMember(), date: el("fDate").value,
       allday: el("fAllday").checked, time: el("fAllday").checked ? "" : el("fTime").value,
-      repeat: el("fRepeat").value, note: el("fNote").value.trim()
+      repeat: el("fRepeat").value, note: el("fNote").value.trim(),
+      attachments: modalAttachments.map(function(a){ return { id:a.id, name:a.name, type:a.type, size:a.size, thumb:a.thumb||null }; })
     };
-    if (editingId) {
-      for (var i=0;i<state.events.length;i++) if (state.events[i].id===editingId) { data.id = editingId; state.events[i] = data; }
-    } else { data.id = uid(); state.events.push(data); }
-    save(); closeOverlay("evOverlay");
-    if (data.date) selectedDay = parseYmd(data.date);
-    render();
+    var ops = [];
+    modalAttachments.forEach(function(a){ if (a._new) ops.push(idbPut({ id:a.id, eventId:id, name:a.name, type:a.type, dataUrl:a.dataUrl })); });
+    modalRemovedAtt.forEach(function(rid){ ops.push(idbDel(rid)); });
+    Promise.all(ops).catch(function(){}).then(function(){
+      if (editingId) {
+        for (var i=0;i<state.events.length;i++) if (state.events[i].id===editingId) state.events[i] = data;
+      } else { state.events.push(data); }
+      save(); closeOverlay("evOverlay");
+      if (data.date) selectedDay = parseYmd(data.date);
+      render();
+    });
   }
   function deleteEvent() {
     if (!editingId) return;
     if (!confirm("이 일정을 삭제할까요?")) return;
+    var ev = null;
+    for (var i=0;i<state.events.length;i++) if (state.events[i].id===editingId) ev = state.events[i];
+    if (ev && ev.attachments) ev.attachments.forEach(function(a){ idbDel(a.id); });
     state.events = state.events.filter(function(e){ return e.id !== editingId; });
     save(); closeOverlay("evOverlay"); render();
   }
@@ -882,10 +1006,14 @@
 
   // ---------- Import / Export ----------
   function exportData() {
-    var blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a"); a.href = url; a.download = "가족일정_" + ymd(new Date()) + ".json"; a.click();
-    URL.revokeObjectURL(url);
+    var getAtts = IDB_OK ? idbAll().catch(function(){ return []; }) : Promise.resolve([]);
+    getAtts.then(function(atts){
+      var out = { members: state.members, events: state.events, todos: state.todos, attachments: atts };
+      var blob = new Blob([JSON.stringify(out)], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a"); a.href = url; a.download = "가족일정_" + ymd(new Date()) + ".json"; a.click();
+      URL.revokeObjectURL(url);
+    });
   }
   function importData(file) {
     var reader = new FileReader();
@@ -895,8 +1023,14 @@
         if (!d.members || !d.events) throw new Error("형식 오류");
         if (!d.todos) d.todos = [];
         if (!confirm("현재 데이터를 가져온 백업으로 덮어쓸까요?")) return;
-        state = d; activeFilter = null; save(); renderMembers(); render();
-        alert("가져오기 완료!");
+        var atts = d.attachments || [];
+        state = { members: d.members, events: d.events, todos: d.todos };
+        activeFilter = null; save();
+        var restore = IDB_OK
+          ? idbClear().then(function(){ return Promise.all(atts.map(function(a){ return idbPut(a); })); })
+          : Promise.resolve();
+        restore.then(function(){ renderMembers(); render(); alert("가져오기 완료!"); })
+               .catch(function(){ renderMembers(); render(); alert("가져오기 완료 (첨부 일부는 복원하지 못했습니다)."); });
       } catch (e) { alert("올바른 백업 파일이 아닙니다."); }
     };
     reader.readAsText(file);
@@ -973,6 +1107,9 @@
   el("btnImport").onclick = function(){ el("importFile").click(); };
   el("importFile").onchange = function(){ if (this.files[0]) importData(this.files[0]); this.value=""; };
   el("btnNaver").onclick = naverConnect;
+
+  el("attAddBtn").onclick = function(){ el("attInput").click(); };
+  el("attInput").onchange = function(){ if (this.files && this.files.length) addModalFiles(this.files); this.value=""; };
 
   el("todoAdd").onclick = addTodo;
   el("todoInput").onkeydown = function(e){ if (e.key==="Enter") addTodo(); };
