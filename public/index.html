@@ -301,19 +301,23 @@
     <div class="field">
       <label class="allday"><input type="checkbox" id="fAllday" /> 하루 종일</label>
     </div>
-    <div class="row2">
+    <div class="field">
+      <label id="fDateLabel">날짜</label>
+      <input type="date" id="fDate" />
+    </div>
+    <div class="row2" id="timeRow">
       <div class="field">
-        <label id="fDateLabel">날짜</label>
-        <input type="date" id="fDate" />
-      </div>
-      <div class="field" id="timeWrap">
-        <label>시간</label>
+        <label>시작 시간</label>
         <input type="time" id="fTime" />
       </div>
-      <div class="field" id="endWrap" style="display:none">
-        <label>종료일</label>
-        <input type="date" id="fEndDate" />
+      <div class="field">
+        <label>종료 시간</label>
+        <input type="time" id="fEndTime" />
       </div>
+    </div>
+    <div class="field" id="endWrap" style="display:none">
+      <label>종료일</label>
+      <input type="date" id="fEndDate" />
     </div>
     <div class="field">
       <label>반복</label>
@@ -694,7 +698,9 @@
     timed.forEach(function(ev){
       var h = parseInt((ev.time||"09:00").split(":")[0], 10);
       if (h < rangeStart) rangeStart = h;
-      if (h + 1 > rangeEnd) rangeEnd = h + 1;
+      var endHr = h + 1;
+      if (ev.endTime) { var ep = ev.endTime.split(":"); endHr = (+ep[0]) + ((+ep[1] > 0) ? 1 : 0); }
+      if (endHr > rangeEnd) rangeEnd = endHr;
     });
     rangeStart = Math.max(0, rangeStart); rangeEnd = Math.min(24, rangeEnd);
     if (rangeEnd <= rangeStart) rangeEnd = rangeStart + 1;
@@ -736,11 +742,14 @@
       timed.filter(function(ev){ return ev.memberId === m.id; }).forEach(function(ev){
         var parts = (ev.time||"09:00").split(":");
         var startH = (+parts[0]) + (+parts[1])/60;
+        var endH = startH + 1;
+        if (ev.endTime) { var eparts = ev.endTime.split(":"); var eh = (+eparts[0]) + (+eparts[1])/60; if (eh > startH) endH = eh; }
         var top = (startH - rangeStart) * HOUR_H;
-        var height = HOUR_H - 3; // 1-hour default block
+        var height = Math.max(18, (endH - startH) * HOUR_H - 3);
+        var timeLabel = (ev.time||"") + (ev.endTime ? "~" + ev.endTime : "");
         var e = document.createElement("div");
         e.className = "dev"; e.setAttribute("style", evVars(ev) + "left:" + leftExpr + ";width:" + widthExpr + ";top:" + top + "px;height:" + height + "px;");
-        e.innerHTML = '<div class="devt">'+(ev.time||"")+'</div>'+escapeHtml(ev.title);
+        e.innerHTML = '<div class="devt">'+timeLabel+'</div>'+escapeHtml(ev.title);
         e.onclick = function(ev2){ ev2.stopPropagation(); openEdit(ev.id); };
         grid.appendChild(e);
       });
@@ -815,7 +824,7 @@
         '<span class="ldate">'+dateStr+'</span>' +
         '<span class="ldot" style="background:'+eventColor(ev)+'"></span>' +
         '<span class="ltitle">'+escapeHtml(ev.title)+clip+'</span>' +
-        '<span class="ltime">'+(ev.allday?"종일":(ev.time||""))+'</span>' + rep;
+        '<span class="ltime">'+(ev.allday?"종일":((ev.time||"")+(ev.endTime?"~"+ev.endTime:"")))+'</span>' + rep;
       row.onclick = function(){ openEdit(ev.id); };
       body.appendChild(row);
     });
@@ -930,6 +939,7 @@
     el("fDate").value = ymd(date || selectedDay);
     el("fEndDate").value = ymd(date || selectedDay);
     el("fTime").value = time || "09:00";
+    el("fEndTime").value = addHour(time || "09:00");
     el("fAllday").checked = false;
     el("fRepeat").value = "none";
     el("fNote").value = "";
@@ -950,6 +960,7 @@
     el("fDate").value = ev.date;
     el("fEndDate").value = ev.endDate || ev.date;
     el("fTime").value = ev.time || "09:00";
+    el("fEndTime").value = ev.endTime || addHour(ev.time || "09:00");
     el("fAllday").checked = !!ev.allday;
     el("fRepeat").value = ev.repeat || "none";
     el("fNote").value = ev.note || "";
@@ -969,10 +980,13 @@
     var startDate = el("fDate").value;
     var endDate = el("fEndDate").value || startDate;
     if (allday && endDate < startDate) endDate = startDate; // 종료일이 앞서면 시작일로 맞춤
+    var startTime = el("fTime").value;
+    var endTime = el("fEndTime").value;
+    if (!allday && (!endTime || endTime <= startTime)) endTime = addHour(startTime); // 종료시간이 시작보다 앞서면 +1시간
     var data = {
       id: id, title: title, memberId: pickedMember(), date: startDate,
       endDate: allday ? endDate : "",
-      allday: allday, time: allday ? "" : el("fTime").value,
+      allday: allday, time: allday ? "" : startTime, endTime: allday ? "" : endTime,
       repeat: el("fRepeat").value, note: el("fNote").value.trim(),
       attachments: modalAttachments.map(function(a){ return { id:a.id, name:a.name, type:a.type, size:a.size, thumb:a.thumb||null }; })
     };
@@ -997,13 +1011,20 @@
     state.events = state.events.filter(function(e){ return e.id !== editingId; });
     save(); closeOverlay("evOverlay"); render();
   }
+  function addHour(t) {
+    var p = (t || "09:00").split(":"); var h = (+p[0]) + 1;
+    if (h > 23) return "23:59";
+    return pad(h) + ":" + pad(+p[1] || 0);
+  }
   function syncAllday() {
     var allday = el("fAllday").checked;
-    el("timeWrap").style.display = allday ? "none" : "";
+    el("timeRow").style.display = allday ? "none" : "";
     el("endWrap").style.display = allday ? "" : "none";
     el("fDateLabel").textContent = allday ? "시작일" : "날짜";
     if (allday) {
       if (!el("fEndDate").value || el("fEndDate").value < el("fDate").value) el("fEndDate").value = el("fDate").value;
+    } else {
+      if (!el("fEndTime").value || el("fEndTime").value <= el("fTime").value) el("fEndTime").value = addHour(el("fTime").value);
     }
   }
 
@@ -1103,8 +1124,10 @@
     var _allday = el("fAllday").checked;
     var _end = el("fEndDate").value || el("fDate").value;
     if (_allday && _end < el("fDate").value) _end = el("fDate").value;
+    var _et = el("fEndTime").value;
+    if (!_allday && (!_et || _et <= el("fTime").value)) _et = addHour(el("fTime").value);
     var payload = { title: title, date: el("fDate").value, endDate: _allday ? _end : "", allday: _allday,
-      time: _allday ? "" : el("fTime").value, repeat: el("fRepeat").value, note: el("fNote").value.trim() };
+      time: _allday ? "" : el("fTime").value, endTime: _allday ? "" : _et, repeat: el("fRepeat").value, note: el("fNote").value.trim() };
     var btn = el("evNaver"); var prev = btn.textContent; btn.disabled = true; btn.textContent = "등록 중…";
     fetch("/api/naver/schedule", { method: "POST", credentials: "same-origin",
       headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })

@@ -169,8 +169,11 @@ function buildIcs(ev) {
     lines.push("DTEND;VALUE=DATE:" + nextDay(endBase));
   } else {
     lines.push("DTSTART;TZID=Asia/Seoul:" + localStamp(ev.date, ev.time));
-    // 종료 시각 미지정 시 1시간짜리 일정으로 생성
-    lines.push("DTEND;TZID=Asia/Seoul:" + addHoursStamp(ev.date, ev.time, 1));
+    // 종료 시각이 있으면 사용, 없거나 앞서면 1시간짜리로 생성
+    var dtend = (ev.endTime && ev.endTime > ev.time)
+      ? localStamp(ev.date, ev.endTime)
+      : addHoursStamp(ev.date, ev.time, 1);
+    lines.push("DTEND;TZID=Asia/Seoul:" + dtend);
   }
 
   lines.push("SUMMARY:" + escapeIcs(ev.title));
