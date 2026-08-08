@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="140" height="140" viewBox="0 0 140 140">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6d6af0"/>
+      <stop offset="1" stop-color="#4f46e5"/>
+    </linearGradient>
+    <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#1e1b4b" flood-opacity="0.30"/>
+    </filter>
+    <clipPath id="card">
+      <rect x="28" y="38" width="84" height="72" rx="14"/>
+    </clipPath>
+  </defs>
+
+  <!-- app-icon background -->
+  <rect x="0" y="0" width="140" height="140" rx="32" fill="url(#bg)"/>
+
+  <!-- calendar binding posts -->
+  <rect x="50" y="28" width="7" height="18" rx="3.5" fill="#c7d2fe"/>
+  <rect x="83" y="28" width="7" height="18" rx="3.5" fill="#c7d2fe"/>
+
+  <!-- calendar card -->
+  <g filter="url(#sh)">
+    <rect x="28" y="38" width="84" height="72" rx="14" fill="#ffffff"/>
+  </g>
+
+  <!-- header band -->
+  <g clip-path="url(#card)">
+    <rect x="28" y="38" width="84" height="20" fill="#eef2ff"/>
+    <rect x="28" y="57" width="84" height="1.5" fill="#e0e4f7"/>
+  </g>
+
+  <!-- family member dots (아빠·엄마·윤호·윤아) -->
+  <circle cx="58" cy="74" r="8.5" fill="#2563eb"/>
+  <circle cx="82" cy="74" r="8.5" fill="#db2777"/>
+  <circle cx="58" cy="95" r="8.5" fill="#059669"/>
+  <circle cx="82" cy="95" r="8.5" fill="#7c3aed"/>
+</svg>
