@@ -1037,19 +1037,20 @@
   }
 
   // ---------- Naver integration (optional backend) ----------
-  var naver = { available: false, connected: false };
+  var naver = { available: false, configured: false, connected: false };
   function initNaver() {
     fetch("/api/naver/status", { credentials: "same-origin" })
       .then(function(r){ if (!r.ok) throw new Error("no backend"); return r.json(); })
-      .then(function(d){ naver.available = true; naver.connected = !!d.connected; updateNaverUI(); })
+      .then(function(d){ naver.available = true; naver.configured = !!d.configured; naver.connected = !!d.connected; updateNaverUI(); })
       .catch(function(){ naver.available = false; updateNaverUI(); });
   }
   function updateNaverUI() {
     var btn = el("btnNaver");
-    if (!naver.available) { btn.style.display = "none"; }
+    // 백엔드가 있고 네이버 연동이 실제로 설정된 경우에만 버튼 노출
+    if (!naver.available || !naver.configured) { btn.style.display = "none"; }
     else { btn.style.display = ""; btn.textContent = naver.connected ? "네이버 ✓" : "네이버 연결";
       btn.title = naver.connected ? "네이버 캘린더 연결됨 (클릭 시 해제)" : "네이버 캘린더에 연결"; }
-    el("evNaver").style.display = (naver.available && naver.connected) ? "" : "none";
+    el("evNaver").style.display = (naver.available && naver.configured && naver.connected) ? "" : "none";
   }
   function naverConnect() {
     if (!naver.connected) { window.location.href = "/api/naver/login"; }
