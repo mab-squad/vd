@@ -1,0 +1,17 @@
+{
+  "name": "family-schedule-app",
+  "version": "1.0.0",
+  "description": "우리 가족 일정표 - 네이버 캘린더 연동 지원 웹앱",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "express-session": "^1.18.0"
+  }
+}
