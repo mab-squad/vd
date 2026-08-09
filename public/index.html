@@ -900,9 +900,27 @@
     }
 
     // member columns (background + click to add) and events
+    // 같은 열에서 시간이 겹치는 일정을 나란히 배치(레인 계산)
+    function layoutOverlaps(items) {
+      items.sort(function(a,b){ return a.s - b.s || a.e - b.e; });
+      var out = [], cluster = [], lanesEnd = [], clusterEnd = 0;
+      function flush(){ var cols = lanesEnd.length; cluster.forEach(function(it){ it.cols = cols; out.push(it); }); cluster = []; lanesEnd = []; clusterEnd = 0; }
+      items.forEach(function(it){
+        if (cluster.length && it.s >= clusterEnd) flush();
+        var placed = false;
+        for (var i=0;i<lanesEnd.length;i++){ if (lanesEnd[i] <= it.s){ lanesEnd[i] = it.e; it.lane = i; placed = true; break; } }
+        if (!placed){ it.lane = lanesEnd.length; lanesEnd.push(it.e); }
+        cluster.push(it); clusterEnd = Math.max(clusterEnd, it.e);
+      });
+      flush();
+      return out;
+    }
+
     mem.forEach(function(m, idx){
-      var leftExpr = "calc(" + gutterW + "px + " + idx + " * (100% - " + gutterW + "px) / " + mem.length + ")";
-      var widthExpr = "calc((100% - " + gutterW + "px) / " + mem.length + ")";
+      var colLeftRaw = gutterW + "px + " + idx + " * (100% - " + gutterW + "px) / " + mem.length;
+      var colWraw = "(100% - " + gutterW + "px) / " + mem.length;
+      var leftExpr = "calc(" + colLeftRaw + ")";
+      var widthExpr = "calc(" + colWraw + ")";
 
       var colBg = document.createElement("div"); colBg.className = "dcol";
       colBg.style.left = leftExpr; colBg.style.width = widthExpr;
@@ -918,20 +936,23 @@
       })(m);
       grid.appendChild(colBg);
 
-      timed.filter(function(ev){ return (ev.memberIds || []).indexOf(m.id) >= 0; }).forEach(function(ev){
-        var parts = (ev.time||"09:00").split(":");
-        var startH = (+parts[0]) + (+parts[1])/60;
-        var endH = startH + 1;
-        if (ev.endTime) { var eparts = ev.endTime.split(":"); var eh = (+eparts[0]) + (+eparts[1])/60; if (eh > startH) endH = eh; }
-        var top = (startH - rangeStart) * HOUR_H;
-        var height = Math.max(18, (endH - startH) * HOUR_H - 3);
+      var mine = timed.filter(function(ev){ return (ev.memberIds || []).indexOf(m.id) >= 0; }).map(function(ev){
+        var sp = (ev.time||"09:00").split(":"); var s = (+sp[0])*60 + (+sp[1]); var e = s + 60;
+        if (ev.endTime) { var ep = ev.endTime.split(":"); var ee = (+ep[0])*60 + (+ep[1]); if (ee > s) e = ee; }
+        return { ev: ev, s: s, e: e, lane: 0, cols: 1 };
+      });
+      layoutOverlaps(mine).forEach(function(it){
+        var ev = it.ev;
+        var top = (it.s/60 - rangeStart) * HOUR_H;
+        var height = Math.max(18, (it.e - it.s)/60 * HOUR_H - 3);
+        var subLeft = "calc(" + colLeftRaw + " + " + it.lane + " * (" + colWraw + ") / " + it.cols + ")";
+        var subWidth = "calc((" + colWraw + ") / " + it.cols + " - 3px)";
         var timeLabel = (ev.time||"") + (ev.endTime ? "~" + ev.endTime : "");
-        var e = document.createElement("div");
-        // 이 열(구성원 m)의 색으로 표시
-        e.className = "dev"; e.setAttribute("style", evVarsColor(ev.color || m.color) + "left:" + leftExpr + ";width:" + widthExpr + ";top:" + top + "px;height:" + height + "px;");
-        e.innerHTML = '<div class="devt">'+timeLabel+'</div>'+escapeHtml(ev.title);
-        e.onclick = function(ev2){ ev2.stopPropagation(); openEdit(ev.id); };
-        grid.appendChild(e);
+        var e2 = document.createElement("div");
+        e2.className = "dev"; e2.setAttribute("style", evVarsColor(ev.color || m.color) + "left:" + subLeft + ";width:" + subWidth + ";top:" + top + "px;height:" + height + "px;");
+        e2.innerHTML = '<div class="devt">'+timeLabel+'</div>'+escapeHtml(ev.title);
+        e2.onclick = function(ev2){ ev2.stopPropagation(); openEdit(ev.id); };
+        grid.appendChild(e2);
       });
     });
 
