@@ -190,6 +190,31 @@
   .lrow .lrep { font-size: 10px; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 7px; }
   .list-empty { color: var(--muted); text-align: center; padding: 40px 0; }
 
+  /* Study planner */
+  .study-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border-soft); }
+  .study-head .sh-title { font-weight: 700; }
+  .study-head .sh-date { font-size: 13px; color: var(--muted); }
+  .study-kids { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 14px 0; }
+  .study-kids .chip.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .study-add { display: flex; gap: 8px; padding: 12px 14px; flex-wrap: wrap; }
+  .study-add input { padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); }
+  .study-add .st-subj { width: 110px; }
+  .study-add .st-cont { flex: 1; min-width: 180px; }
+  .study-add .st-min { width: 72px; }
+  .study-list { padding: 0 14px; }
+  .st-item { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border-soft); }
+  .st-item:last-child { border-bottom: 0; }
+  .st-item input[type=checkbox] { width: 18px; height: 18px; flex: none; cursor: pointer; }
+  .st-item .st-badge { font-size: 11px; font-weight: 700; color: #fff; padding: 2px 8px; border-radius: 999px; flex: none; }
+  .st-item .st-body { flex: 1; overflow: hidden; }
+  .st-item .st-body .stc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .st-item.done .st-body { text-decoration: line-through; color: var(--muted); }
+  .st-item .st-time { font-size: 12px; color: var(--muted); flex: none; font-variant-numeric: tabular-nums; }
+  .st-item .del { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 16px; }
+  .study-empty { color: var(--muted); text-align: center; padding: 22px 0; font-size: 13px; }
+  .study-foot { padding: 12px 14px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--border-soft); }
+  .study-foot:empty { display: none; }
+
   /* Modal */
   .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: flex-end; justify-content: center; z-index: 50; }
   .overlay.open { display: flex; }
@@ -247,6 +272,7 @@
       <button id="segWeek">주간</button>
       <button id="segMonth" class="active">월간</button>
       <button id="segList">목록</button>
+      <button id="segStudy">스터디</button>
     </div>
   </div>
 
@@ -266,6 +292,24 @@
       <button class="btn" id="searchClear">지우기</button>
     </div>
     <div id="listBody"></div>
+  </div>
+
+  <!-- Study planner -->
+  <div class="card studywrap hidden" id="studyView">
+    <div class="study-head">
+      <span class="sh-title">📚 스터디플래너</span>
+      <span class="grow"></span>
+      <span class="sh-date" id="studyDate"></span>
+    </div>
+    <div class="study-kids" id="studyKids"></div>
+    <div class="study-add">
+      <input id="stSubject" class="st-subj" placeholder="과목" autocomplete="off" />
+      <input id="stContent" class="st-cont" placeholder="학습 내용/분량 (예: 수학 32~40p)" autocomplete="off" />
+      <input id="stMin" class="st-min" type="number" min="0" placeholder="분" />
+      <button class="btn primary" id="stAdd">추가</button>
+    </div>
+    <div class="study-list" id="studyList"></div>
+    <div class="study-foot" id="studyFoot"></div>
   </div>
 
   <!-- To-do -->
@@ -392,6 +436,7 @@
   var activeFilter = null;             // Set of visible member ids; null = all
   var editingId = null;
   var searchQuery = "";
+  var selectedStudyChild = null;  // 스터디 탭에서 선택된 구성원
   var modalAttachments = [];   // attachments currently shown in the open modal
   var modalRemovedAtt = [];    // ids of existing attachments to delete on save
   var IDB_OK = (typeof indexedDB !== "undefined");
@@ -405,7 +450,8 @@
         { id: uid(), name: "윤아", color: "#7c3aed" }
       ],
       events: [],
-      todos: []
+      todos: [],
+      study: []
     };
   }
   function load() {
@@ -415,6 +461,7 @@
       var d = JSON.parse(raw);
       if (!d.members || !d.events) return defaultState();
       if (!d.todos) d.todos = [];
+      if (!d.study) d.study = [];
       // 구버전(단일 memberId) → 다중 memberIds 마이그레이션
       d.events.forEach(function(ev){
         if (!ev.memberIds) ev.memberIds = ev.memberId ? [ev.memberId] : [];
@@ -547,29 +594,36 @@
 
   // ---------- Render dispatch ----------
   function render() {
+    var isCal = view === "month" || view === "week";
     var isList = view === "list";
-    el("mainView").classList.toggle("hidden", isList);
+    var isStudy = view === "study";
+    el("mainView").classList.toggle("hidden", !isCal);
     el("listView").classList.toggle("hidden", !isList);
-    el("todoCard").classList.toggle("hidden", isList);
-    el("btnPrev").style.visibility = isList ? "hidden" : "";
-    el("btnNext").style.visibility = isList ? "hidden" : "";
-    el("btnToday").style.visibility = isList ? "hidden" : "";
+    el("studyView").classList.toggle("hidden", !isStudy);
+    el("todoCard").classList.toggle("hidden", !isCal);
+    var showNav = isCal || isStudy;  // 목록만 날짜 이동 숨김
+    el("btnPrev").style.visibility = showNav ? "" : "hidden";
+    el("btnNext").style.visibility = showNav ? "" : "hidden";
+    el("btnToday").style.visibility = showNav ? "" : "hidden";
 
     if (view === "month") renderMonth();
     else if (view === "week") renderWeek();
-    else renderList();
+    else if (view === "list") renderList();
+    else renderStudy();
 
-    if (!isList) { renderDayPanel(); renderTodos(); }
+    if (isCal) { renderDayPanel(); renderTodos(); }
     updateNavTitle(); updateSeg();
   }
   function updateSeg() {
     el("segMonth").classList.toggle("active", view==="month");
     el("segWeek").classList.toggle("active", view==="week");
     el("segList").classList.toggle("active", view==="list");
+    el("segStudy").classList.toggle("active", view==="study");
   }
   function updateNavTitle() {
     if (view === "month") el("navTitle").textContent = cursor.getFullYear()+"년 "+(cursor.getMonth()+1)+"월";
     else if (view === "week") { var s=startOfWeek(cursor), e=addDays(s,6); el("navTitle").textContent=(s.getMonth()+1)+"/"+s.getDate()+" – "+(e.getMonth()+1)+"/"+e.getDate(); }
+    else if (view === "study") el("navTitle").textContent = dayLabel(selectedDay);
     else el("navTitle").textContent = "전체 일정";
   }
 
@@ -816,6 +870,64 @@
     if (!v) { el("todoInput").focus(); return; }
     state.todos.push({ id: uid(), text: v, date: ymd(selectedDay), done: false });
     el("todoInput").value = ""; save(); renderTodos();
+  }
+
+  // ---------- Study planner ----------
+  function defaultStudyChild() {
+    var kids = state.members.filter(function(m){ return m.name === "윤호" || m.name === "윤아"; });
+    var pool = kids.length ? kids : state.members;
+    return pool[0] ? pool[0].id : null;
+  }
+  function renderStudyKids() {
+    var wrap = el("studyKids"); wrap.innerHTML = "";
+    state.members.forEach(function(m){
+      var c = document.createElement("div");
+      c.className = "chip" + (m.id === selectedStudyChild ? " sel" : "");
+      c.innerHTML = '<span class="dot" style="background:'+m.color+'"></span>'+escapeHtml(m.name);
+      c.onclick = function(){ selectedStudyChild = m.id; renderStudy(); };
+      wrap.appendChild(c);
+    });
+  }
+  function renderStudy() {
+    if (!selectedStudyChild || !memberById(selectedStudyChild)) selectedStudyChild = defaultStudyChild();
+    renderStudyKids();
+    var isToday = sameDay(selectedDay, startOfDay(new Date()));
+    el("studyDate").textContent = dayLabel(selectedDay) + (isToday ? " · 오늘" : "");
+    var m = memberById(selectedStudyChild);
+    var key = ymd(selectedDay);
+    var items = state.study.filter(function(s){ return s.memberId === selectedStudyChild && s.date === key; });
+    var list = el("studyList"); list.innerHTML = "";
+    if (!items.length) {
+      var e = document.createElement("div"); e.className = "study-empty";
+      e.textContent = (m ? m.name : "") + " 학습 계획이 없어요. 위에서 과목을 추가하세요.";
+      list.appendChild(e);
+    }
+    items.forEach(function(s){
+      var row = document.createElement("div"); row.className = "st-item" + (s.done ? " done" : "");
+      var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
+      cb.onchange = function(){ s.done = cb.checked; save(); renderStudy(); };
+      var badge = document.createElement("span"); badge.className = "st-badge"; badge.style.background = m ? m.color : "#888"; badge.textContent = s.subject || "공부";
+      var body = document.createElement("div"); body.className = "st-body"; body.innerHTML = '<div class="stc">'+escapeHtml(s.content || "")+'</div>';
+      var time = document.createElement("span"); time.className = "st-time"; time.textContent = s.minutes ? (s.minutes + "분") : "";
+      var del = document.createElement("button"); del.className = "del"; del.textContent = "✕";
+      del.onclick = function(){ state.study = state.study.filter(function(x){ return x.id !== s.id; }); save(); renderStudy(); };
+      row.appendChild(cb); row.appendChild(badge); row.appendChild(body); row.appendChild(time); row.appendChild(del);
+      list.appendChild(row);
+    });
+    var done = items.filter(function(s){ return s.done; }).length;
+    var mins = items.reduce(function(a,s){ return a + (parseInt(s.minutes,10) || 0); }, 0);
+    el("studyFoot").textContent = items.length ? (done + "/" + items.length + " 완료" + (mins ? (" · 총 예상 " + mins + "분") : "")) : "";
+  }
+  function addStudy() {
+    var subj = el("stSubject").value.trim();
+    var cont = el("stContent").value.trim();
+    var min = parseInt(el("stMin").value, 10);
+    if (!subj && !cont) { el("stContent").focus(); return; }
+    if (!selectedStudyChild) selectedStudyChild = defaultStudyChild();
+    state.study.push({ id: uid(), memberId: selectedStudyChild, date: ymd(selectedDay),
+      subject: subj || "공부", content: cont, minutes: (isNaN(min) || min < 0) ? 0 : min, done: false });
+    el("stSubject").value = ""; el("stContent").value = ""; el("stMin").value = "";
+    save(); renderStudy(); el("stSubject").focus();
   }
 
   // ---------- List / Search ----------
@@ -1109,7 +1221,7 @@
   function exportData() {
     var getAtts = IDB_OK ? idbAll().catch(function(){ return []; }) : Promise.resolve([]);
     getAtts.then(function(atts){
-      var out = { members: state.members, events: state.events, todos: state.todos, attachments: atts };
+      var out = { members: state.members, events: state.events, todos: state.todos, study: state.study, attachments: atts };
       var blob = new Blob([JSON.stringify(out)], { type: "application/json" });
       var url = URL.createObjectURL(blob);
       var a = document.createElement("a"); a.href = url; a.download = "가족일정_" + ymd(new Date()) + ".json"; a.click();
@@ -1123,9 +1235,10 @@
         var d = JSON.parse(reader.result);
         if (!d.members || !d.events) throw new Error("형식 오류");
         if (!d.todos) d.todos = [];
+        if (!d.study) d.study = [];
         if (!confirm("현재 데이터를 가져온 백업으로 덮어쓸까요?")) return;
         var atts = d.attachments || [];
-        state = { members: d.members, events: d.events, todos: d.todos };
+        state = { members: d.members, events: d.events, todos: d.todos, study: d.study };
         activeFilter = null; save();
         var restore = IDB_OK
           ? idbClear().then(function(){ return Promise.all(atts.map(function(a){ return idbPut(a); })); })
@@ -1193,9 +1306,18 @@
   el("segMonth").onclick = function(){ view="month"; render(); };
   el("segWeek").onclick = function(){ view="week"; render(); };
   el("segList").onclick = function(){ view="list"; render(); setTimeout(function(){ el("searchInput").focus(); }, 30); };
+  el("segStudy").onclick = function(){ view="study"; render(); };
   el("btnToday").onclick = function(){ cursor = startOfDay(new Date()); selectedDay = startOfDay(new Date()); render(); };
-  el("btnPrev").onclick = function(){ cursor = view==="month" ? new Date(cursor.getFullYear(), cursor.getMonth()-1, 1) : addDays(cursor, -7); render(); };
-  el("btnNext").onclick = function(){ cursor = view==="month" ? new Date(cursor.getFullYear(), cursor.getMonth()+1, 1) : addDays(cursor, 7); render(); };
+  el("btnPrev").onclick = function(){
+    if (view==="study") selectedDay = addDays(selectedDay, -1);
+    else cursor = view==="month" ? new Date(cursor.getFullYear(), cursor.getMonth()-1, 1) : addDays(cursor, -7);
+    render();
+  };
+  el("btnNext").onclick = function(){
+    if (view==="study") selectedDay = addDays(selectedDay, 1);
+    else cursor = view==="month" ? new Date(cursor.getFullYear(), cursor.getMonth()+1, 1) : addDays(cursor, 7);
+    render();
+  };
   el("fab").onclick = function(){ openNew(selectedDay); };
 
   el("evSave").onclick = saveEvent;
@@ -1220,6 +1342,11 @@
 
   el("todoAdd").onclick = addTodo;
   el("todoInput").onkeydown = function(e){ if (e.key==="Enter") addTodo(); };
+
+  el("stAdd").onclick = addStudy;
+  el("stSubject").onkeydown = function(e){ if (e.key==="Enter") el("stContent").focus(); };
+  el("stContent").onkeydown = function(e){ if (e.key==="Enter") addStudy(); };
+  el("stMin").onkeydown = function(e){ if (e.key==="Enter") addStudy(); };
 
   el("searchInput").oninput = function(){ searchQuery = this.value; renderList(); };
   el("searchClear").onclick = function(){ searchQuery=""; el("searchInput").value=""; renderList(); el("searchInput").focus(); };
