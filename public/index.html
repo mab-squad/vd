@@ -276,6 +276,8 @@
   .fab { position: fixed; right: 20px; bottom: 20px; z-index: 40; width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--accent); color: #fff; font-size: 28px; cursor: pointer; box-shadow: 0 6px 20px rgba(79,70,229,.45); line-height: 1; }
   .hidden { display: none !important; }
   .foot { text-align: center; color: var(--muted); font-size: 12px; margin-top: 16px; }
+  .toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%) translateY(6px); background: var(--accent); color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 14px; box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; z-index: 60; max-width: 88vw; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 </style>
 </head>
 <body>
@@ -407,6 +409,7 @@
 </div>
 
 <button class="fab" id="fab" title="일정 추가">＋</button>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <!-- Event modal -->
 <div class="overlay" id="evOverlay">
@@ -468,6 +471,9 @@
       <button type="button" class="btn" id="attAddBtn">＋ 사진/파일 추가</button>
       <input type="file" id="attInput" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.hwp" multiple class="hidden" />
       <div class="att-hint">사진은 자동 압축됩니다. 첨부는 이 브라우저에 저장되며 백업에 포함됩니다. (파일당 15MB)</div>
+    </div>
+    <div class="field" id="autoNaverField" style="display:none">
+      <label class="allday"><input type="checkbox" id="fAutoNaver" /> 새 일정 저장 시 자동으로 네이버 등록</label>
     </div>
     <div class="modal-actions">
       <button class="btn" id="evDelete" style="color:#ef4444">삭제</button>
@@ -1375,6 +1381,7 @@
   function saveEvent() {
     var title = el("fTitle").value.trim();
     if (!title) { el("fTitle").focus(); return; }
+    var isNew = !editingId;
     var id = editingId || uid();
     var allday = el("fAllday").checked;
     var startDate = el("fDate").value;
@@ -1405,6 +1412,8 @@
       save(); closeOverlay("evOverlay");
       if (data.date) selectedDay = parseYmd(data.date);
       render();
+      // 새 일정 + 자동 등록 옵션 ON + 네이버 연결 시 자동 등록
+      if (isNew && autoNaver && naver.connected) registerEventToNaver(data);
     });
   }
   function deleteEvent() {
@@ -1506,6 +1515,24 @@
 
   // ---------- Naver integration (optional backend) ----------
   var naver = { available: false, configured: false, connected: false };
+  var autoNaver = (localStorage.getItem("fs_autoNaver") === "1"); // 기기별 설정
+  var _toastTimer = null;
+  function showToast(msg) {
+    var t = el("toast"); if (!t) return;
+    t.textContent = msg; t.classList.add("show");
+    if (_toastTimer) clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(function(){ t.classList.remove("show"); }, 2200);
+  }
+  function registerEventToNaver(ev) {
+    fetch("/api/naver/schedule", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(eventToNaverPayload(ev)) })
+      .then(function(r){ return r.json().then(function(b){ return { ok: r.ok, b: b }; }); })
+      .then(function(res){
+        if (res.ok && res.b.result === "success") { state.naverSent[ev.id] = Date.now(); save(); showToast("📅 네이버에 자동 등록됨"); }
+        else if (res.b && res.b.error === "not_connected") { naver.connected = false; updateNaverUI(); showToast("네이버 연결 만료 — 자동 등록 실패"); }
+        else { showToast("네이버 자동 등록 실패"); }
+      })
+      .catch(function(){ showToast("네이버 자동 등록 실패(네트워크)"); });
+  }
   function initNaver() {
     fetch("/api/naver/status", { credentials: "same-origin" })
       .then(function(r){ if (!r.ok) throw new Error("no backend"); return r.json(); })
@@ -1518,10 +1545,13 @@
     if (!naver.available || !naver.configured) { btn.style.display = "none"; }
     else { btn.style.display = ""; btn.textContent = naver.connected ? "네이버 ✓" : "네이버 연결";
       btn.title = naver.connected ? "네이버 캘린더 연결됨 (클릭 시 해제)" : "네이버 캘린더에 연결"; }
-    el("evNaver").style.display = (naver.available && naver.configured && naver.connected) ? "" : "none";
-    var showBulk = (naver.available && naver.configured && naver.connected) ? "" : "none";
+    var conn = (naver.available && naver.configured && naver.connected);
+    el("evNaver").style.display = conn ? "" : "none";
+    var showBulk = conn ? "" : "none";
     if (el("bulkWeek")) el("bulkWeek").style.display = showBulk;
     if (el("bulkMonth")) el("bulkMonth").style.display = showBulk;
+    if (el("autoNaverField")) el("autoNaverField").style.display = conn ? "" : "none";
+    if (el("fAutoNaver")) el("fAutoNaver").checked = autoNaver;
   }
   function naverConnect() {
     if (!naver.connected) { window.location.href = "/api/naver/login"; }
@@ -1885,6 +1915,7 @@
   el("searchClear").onclick = function(){ searchQuery=""; el("searchInput").value=""; renderList(); el("searchInput").focus(); };
   el("bulkWeek").onclick = function(){ bulkNaver("week"); };
   el("bulkMonth").onclick = function(){ bulkNaver("month"); };
+  el("fAutoNaver").onchange = function(){ autoNaver = this.checked; localStorage.setItem("fs_autoNaver", autoNaver ? "1" : "0"); };
 
   document.querySelectorAll(".overlay").forEach(function(ov){ ov.addEventListener("click", function(e){ if (e.target===ov) ov.classList.remove("open"); }); });
   document.addEventListener("keydown", function(e){ if (e.key==="Escape") document.querySelectorAll(".overlay.open").forEach(function(o){ o.classList.remove("open"); }); });
