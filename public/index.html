@@ -199,7 +199,12 @@
   .study-sec { padding: 12px 14px; border-top: 1px solid var(--border-soft); }
   .sec-h { font-weight: 700; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
   .sec-sub { font-weight: 400; font-size: 12px; color: var(--muted); }
-  .sec-textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); resize: vertical; min-height: 44px; }
+  .sec-textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); resize: vertical; min-height: 40px; }
+  .goal-row { margin-bottom: 8px; }
+  .goal-lb { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
+  .mind-emojis { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .emoji-btn { font-size: 18px; border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 2px 9px; cursor: pointer; line-height: 1.5; }
+  .emoji-btn:hover { background: var(--accent-soft); }
   .study-add { display: flex; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
   .study-add input { padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); }
   .study-add .st-subj { width: 90px; }
@@ -314,12 +319,20 @@
 
     <div class="study-sec">
       <div class="sec-h">🎯 나의 목표</div>
-      <textarea id="stGoal" class="sec-textarea" placeholder="예: 이번 달 안에 수학 문제집 끝내기"></textarea>
+      <div class="goal-row">
+        <label class="goal-lb" id="goalWeekLb">이번 주</label>
+        <textarea id="stGoalWeek" class="sec-textarea" placeholder="예: 영어 단어 100개 외우기"></textarea>
+      </div>
+      <div class="goal-row">
+        <label class="goal-lb" id="goalMonthLb">이번 달</label>
+        <textarea id="stGoalMonth" class="sec-textarea" placeholder="예: 수학 문제집 한 권 끝내기"></textarea>
+      </div>
     </div>
 
     <div class="study-sec">
       <div class="sec-h">💭 나의 오늘의 마음가짐</div>
       <textarea id="stMind" class="sec-textarea" placeholder="예: 오늘은 집중해서 30분씩 공부하자!"></textarea>
+      <div class="mind-emojis" id="mindEmojis"></div>
     </div>
 
     <div class="study-sec">
@@ -485,7 +498,9 @@
       todos: [],
       study: [],           // 오늘의 학습계획 (구성원+날짜별)
       studyTasks: [],      // 해야 할 일 (구성원+날짜별)
-      studyGoals: {},      // 나의 목표 (구성원별, 지속)
+      studyGoals: {},      // (구버전 호환용, 미사용)
+      studyGoalsWeek: {},  // 주간 목표 (구성원|주시작일)
+      studyGoalsMonth: {}, // 월간 목표 (구성원|YYYY-MM)
       studyMind: {}        // 오늘의 마음가짐 (구성원|날짜별)
     };
   }
@@ -499,6 +514,8 @@
       if (!d.study) d.study = [];
       if (!d.studyTasks) d.studyTasks = [];
       if (!d.studyGoals) d.studyGoals = {};
+      if (!d.studyGoalsWeek) d.studyGoalsWeek = {};
+      if (!d.studyGoalsMonth) d.studyGoalsMonth = {};
       if (!d.studyMind) d.studyMind = {};
       // 구버전(단일 memberId) → 다중 memberIds 마이그레이션
       d.events.forEach(function(ev){
@@ -927,12 +944,19 @@
     });
   }
   function studyMindKey() { return selectedStudyChild + "|" + ymd(selectedDay); }
+  function studyWeekKey() { return selectedStudyChild + "|" + ymd(startOfWeek(selectedDay)); }
+  function studyMonthKey() { return selectedStudyChild + "|" + selectedDay.getFullYear() + "-" + pad(selectedDay.getMonth()+1); }
   function renderStudy() {
     if (!selectedStudyChild || !memberById(selectedStudyChild)) selectedStudyChild = defaultStudyChild();
     renderStudyKids();
     var isToday = sameDay(selectedDay, startOfDay(new Date()));
     el("studyDate").textContent = dayLabel(selectedDay) + (isToday ? " · 오늘" : "");
-    el("stGoal").value = (state.studyGoals && state.studyGoals[selectedStudyChild]) || "";
+    // 목표: 주간/월간 (선택한 날짜가 속한 주·달 기준)
+    var ws = startOfWeek(selectedDay), we = addDays(ws, 6);
+    el("goalWeekLb").textContent = "이번 주 (" + (ws.getMonth()+1) + "/" + ws.getDate() + "~" + (we.getMonth()+1) + "/" + we.getDate() + ")";
+    el("goalMonthLb").textContent = "이번 달 (" + (selectedDay.getMonth()+1) + "월)";
+    el("stGoalWeek").value = state.studyGoalsWeek[studyWeekKey()] || "";
+    el("stGoalMonth").value = state.studyGoalsMonth[studyMonthKey()] || "";
     el("stMind").value = (state.studyMind && state.studyMind[studyMindKey()]) || "";
     renderStudyPlan();
     renderStudyTasks();
@@ -976,8 +1000,18 @@
     var done = items.filter(function(s){ return s.done; }).length;
     el("taskFoot").textContent = items.length ? (done + "/" + items.length + " 완료") : "";
   }
-  function saveGoal() { if (!selectedStudyChild) return; state.studyGoals[selectedStudyChild] = el("stGoal").value; save(); }
+  function saveGoalWeek() { if (!selectedStudyChild) return; state.studyGoalsWeek[studyWeekKey()] = el("stGoalWeek").value; save(); }
+  function saveGoalMonth() { if (!selectedStudyChild) return; state.studyGoalsMonth[studyMonthKey()] = el("stGoalMonth").value; save(); }
   function saveMind() { if (!selectedStudyChild) return; state.studyMind[studyMindKey()] = el("stMind").value; save(); }
+  var MIND_EMOJIS = ["😊","💪","🔥","😤","😴","✨","🙂","😢"];
+  function buildMindEmojis() {
+    var wrap = el("mindEmojis"); if (!wrap || wrap.childElementCount) return;
+    MIND_EMOJIS.forEach(function(e){
+      var btn = document.createElement("button"); btn.type = "button"; btn.className = "emoji-btn"; btn.textContent = e;
+      btn.onclick = function(){ el("stMind").value = (el("stMind").value + e); saveMind(); el("stMind").focus(); };
+      wrap.appendChild(btn);
+    });
+  }
   function addStudy() {
     var subj = el("stSubject").value.trim();
     var cont = el("stContent").value.trim();
@@ -1290,7 +1324,7 @@
   function exportData() {
     var getAtts = IDB_OK ? idbAll().catch(function(){ return []; }) : Promise.resolve([]);
     getAtts.then(function(atts){
-      var out = { members: state.members, events: state.events, todos: state.todos, study: state.study, studyTasks: state.studyTasks, studyGoals: state.studyGoals, studyMind: state.studyMind, attachments: atts };
+      var out = { members: state.members, events: state.events, todos: state.todos, study: state.study, studyTasks: state.studyTasks, studyGoals: state.studyGoals, studyGoalsWeek: state.studyGoalsWeek, studyGoalsMonth: state.studyGoalsMonth, studyMind: state.studyMind, attachments: atts };
       var blob = new Blob([JSON.stringify(out)], { type: "application/json" });
       var url = URL.createObjectURL(blob);
       var a = document.createElement("a"); a.href = url; a.download = "가족일정_" + ymd(new Date()) + ".json"; a.click();
@@ -1308,7 +1342,9 @@
         if (!confirm("현재 데이터를 가져온 백업으로 덮어쓸까요?")) return;
         var atts = d.attachments || [];
         state = { members: d.members, events: d.events, todos: d.todos, study: d.study,
-          studyTasks: d.studyTasks || [], studyGoals: d.studyGoals || {}, studyMind: d.studyMind || {} };
+          studyTasks: d.studyTasks || [], studyGoals: d.studyGoals || {},
+          studyGoalsWeek: d.studyGoalsWeek || {}, studyGoalsMonth: d.studyGoalsMonth || {},
+          studyMind: d.studyMind || {} };
         activeFilter = null; save();
         var restore = IDB_OK
           ? idbClear().then(function(){ return Promise.all(atts.map(function(a){ return idbPut(a); })); })
@@ -1517,8 +1553,10 @@
   el("stSubject").onkeydown = function(e){ if (e.key==="Enter") el("stContent").focus(); };
   el("stContent").onkeydown = function(e){ if (e.key==="Enter") addStudy(); };
   el("stMin").onkeydown = function(e){ if (e.key==="Enter") addStudy(); };
-  el("stGoal").oninput = saveGoal;
+  el("stGoalWeek").oninput = saveGoalWeek;
+  el("stGoalMonth").oninput = saveGoalMonth;
   el("stMind").oninput = saveMind;
+  buildMindEmojis();
   el("stTaskAdd").onclick = addStudyTask;
   el("stTaskInput").onkeydown = function(e){ if (e.key==="Enter") addStudyTask(); };
 
