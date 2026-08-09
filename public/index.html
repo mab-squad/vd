@@ -252,6 +252,11 @@
   .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .memberpick { display: flex; gap: 8px; flex-wrap: wrap; }
   .memberpick .chip.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .colorpick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .colorpick .sw { width: 28px; height: 28px; border-radius: 50%; cursor: pointer; border: 0; padding: 0; }
+  .colorpick .sw.sel { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .colorpick .def { height: 28px; padding: 0 12px; border-radius: 999px; cursor: pointer; font-size: 12.5px; border: 1px solid var(--border); background: var(--panel); color: var(--text); }
+  .colorpick .def.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
   .modal-actions { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
   .allday { display: flex; align-items: center; gap: 8px; font-size: 14px; }
   .mic { margin-left: 8px; font-size: 12px; font-weight: 600; border: 1px solid var(--border); background: var(--panel); border-radius: 999px; padding: 2px 10px; cursor: pointer; color: var(--accent); }
@@ -414,8 +419,9 @@
       <label>가족 구성원</label>
       <div class="memberpick" id="fMembers"></div>
     </div>
-    <div class="field">
+    <div class="field" style="display:flex;gap:18px;flex-wrap:wrap">
       <label class="allday"><input type="checkbox" id="fAllday" /> 하루 종일</label>
+      <label class="allday"><input type="checkbox" id="fAnniv" /> 🎂 기념일 (매년)</label>
     </div>
     <div class="field">
       <label id="fDateLabel">날짜</label>
@@ -443,7 +449,12 @@
         <option value="weekly">매주</option>
         <option value="biweekly">격주</option>
         <option value="monthly">매월</option>
+        <option value="yearly">매년</option>
       </select>
+    </div>
+    <div class="field">
+      <label>일정 색상</label>
+      <div class="colorpick" id="fColors"></div>
     </div>
     <div class="field">
       <label>메모</label>
@@ -594,7 +605,7 @@
     var ms = eventMembers(ev);
     return ms.length ? ms.map(function(m){ return m.name; }).join("·") : "?";
   }
-  function eventColor(ev) { var ms = eventMembers(ev); return ms.length ? ms[0].color : "#6b7280"; }
+  function eventColor(ev) { if (ev.color) return ev.color; var ms = eventMembers(ev); return ms.length ? ms[0].color : "#6b7280"; }
   function memberVisible(id) { return !activeFilter || activeFilter.has(id); }
   function eventVisible(ev) {
     var ids = ev.memberIds || (ev.memberId ? [ev.memberId] : []);
@@ -633,6 +644,7 @@
         if (c2.getDate()===start.getDate() && within(startOfDay(c2))) return true;
         return false;
       }
+      case "yearly": return dd.getMonth()===start.getMonth() && dd.getDate()===start.getDate();
       default: return within(start);
     }
   }
@@ -652,7 +664,7 @@
   }
 
   var el = function(id){ return document.getElementById(id); };
-  function repeatLabel(r){ return {daily:"매일",weekly:"매주",biweekly:"격주",monthly:"매월"}[r] || ""; }
+  function repeatLabel(r){ return {daily:"매일",weekly:"매주",biweekly:"격주",monthly:"매월",yearly:"매년"}[r] || ""; }
 
   // ---------- Members ----------
   function renderMembers() {
@@ -778,7 +790,8 @@
     var time = ev.allday ? "" : '<span class="t">'+ (ev.time||"") +'</span>';
     var clip = (ev.attachments && ev.attachments.length) ? "📎" : "";
     var dots = eventMembers(ev).length > 1 ? memberDotsHtml(ev) : "";
-    d.innerHTML = time + dots + escapeHtml(ev.title) + clip;
+    var anniv = ev.anniversary ? "🎂 " : "";
+    d.innerHTML = time + dots + anniv + escapeHtml(ev.title) + clip;
     return d;
   }
 
@@ -805,7 +818,7 @@
         var e = document.createElement("div");
         e.className = "wev"; e.setAttribute("style", evVars(ev));
         var t = ev.allday ? "종일" : (ev.time || "");
-        e.innerHTML = '<span class="wt">'+t+' · '+escapeHtml(eventMemberNames(ev))+'</span><div>'+escapeHtml(ev.title)+'</div>';
+        e.innerHTML = '<span class="wt">'+t+' · '+escapeHtml(eventMemberNames(ev))+'</span><div>'+(ev.anniversary?"🎂 ":"")+escapeHtml(ev.title)+'</div>';
         e.onclick = function(){ openEdit(ev.id); };
         wbody.appendChild(e);
       });
@@ -839,7 +852,8 @@
       var strip = document.createElement("div"); strip.className = "dp-allday";
       allday.forEach(function(ev){
         var c = document.createElement("div"); c.className="adchip"; c.setAttribute("style", evVars(ev));
-        c.textContent = eventMemberNames(ev)+" · "+ev.title;
+        var yrs = ev.anniversary ? (selectedDay.getFullYear() - parseYmd(ev.date).getFullYear()) : 0;
+        c.textContent = (ev.anniversary?"🎂 ":"") + eventMemberNames(ev) + " · " + ev.title + (yrs>0?" ("+yrs+"주년)":"");
         c.onclick = function(){ openEdit(ev.id); };
         strip.appendChild(c);
       });
@@ -914,7 +928,7 @@
         var timeLabel = (ev.time||"") + (ev.endTime ? "~" + ev.endTime : "");
         var e = document.createElement("div");
         // 이 열(구성원 m)의 색으로 표시
-        e.className = "dev"; e.setAttribute("style", evVarsColor(m.color) + "left:" + leftExpr + ";width:" + widthExpr + ";top:" + top + "px;height:" + height + "px;");
+        e.className = "dev"; e.setAttribute("style", evVarsColor(ev.color || m.color) + "left:" + leftExpr + ";width:" + widthExpr + ";top:" + top + "px;height:" + height + "px;");
         e.innerHTML = '<div class="devt">'+timeLabel+'</div>'+escapeHtml(ev.title);
         e.onclick = function(ev2){ ev2.stopPropagation(); openEdit(ev.id); };
         grid.appendChild(e);
@@ -1126,13 +1140,14 @@
       var row = document.createElement("div"); row.className = "lrow";
       var rep = ev.repeat && ev.repeat!=="none" ? '<span class="lrep">'+repeatLabel(ev.repeat)+'</span>' : "";
       var clip = (ev.attachments && ev.attachments.length) ? " 📎" : "";
+      var anniv = ev.anniversary ? "🎂 " : "";
       var dateStr = (d.getMonth()+1)+"/"+d.getDate()+" ("+DOW[d.getDay()]+")";
       if (ev.allday && ev.endDate && ev.endDate !== ev.date) { var ed = parseYmd(ev.endDate); dateStr += " ~ " + (ed.getMonth()+1)+"/"+ed.getDate(); }
       var dots = eventMembers(ev).map(function(m){ return '<span class="ldot" style="background:'+m.color+'"></span>'; }).join("");
       row.innerHTML =
         '<span class="ldate">'+dateStr+'</span>' +
         '<span style="flex:none;display:flex;gap:3px">'+dots+'</span>' +
-        '<span class="ltitle">'+escapeHtml(ev.title)+clip+'</span>' +
+        '<span class="ltitle">'+anniv+escapeHtml(ev.title)+clip+'</span>' +
         '<span class="ltime">'+(ev.allday?"종일":((ev.time||"")+(ev.endTime?"~"+ev.endTime:"")))+'</span>' + rep;
       row.onclick = function(){ openEdit(ev.id); };
       body.appendChild(row);
@@ -1256,6 +1271,29 @@
       wrap.appendChild(c);
     });
   }
+  var COLOR_SWATCHES = ["#2563eb","#db2777","#059669","#7c3aed","#d97706","#dc2626","#0891b2","#16a34a","#e11d48","#0ea5e9"];
+  var modalColor = null; // 개별 일정 색상(null이면 구성원 색 사용)
+  function renderColorPicker() {
+    var wrap = el("fColors"); wrap.innerHTML = "";
+    var def = document.createElement("button");
+    def.type = "button"; def.className = "def" + (!modalColor ? " sel" : "");
+    def.textContent = "구성원 색";
+    def.onclick = function(){ modalColor = null; renderColorPicker(); };
+    wrap.appendChild(def);
+    COLOR_SWATCHES.forEach(function(c){
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "sw" + (modalColor === c ? " sel" : ""); b.style.background = c; b.title = c;
+      b.onclick = function(){ modalColor = c; renderColorPicker(); };
+      wrap.appendChild(b);
+    });
+  }
+  function syncAnniv() {
+    var on = el("fAnniv").checked;
+    if (on) { el("fAllday").checked = true; el("fRepeat").value = "yearly"; }
+    el("fAllday").disabled = on;
+    el("fRepeat").disabled = on;
+    syncAllday();
+  }
   function pickedMembers() {
     var picked = {};
     el("fMembers").querySelectorAll(".chip.sel").forEach(function(n){ if (n.dataset.id) picked[n.dataset.id] = true; });
@@ -1272,8 +1310,10 @@
     el("fTime").value = time || "09:00";
     el("fEndTime").value = addHour(time || "09:00");
     el("fAllday").checked = false;
+    el("fAnniv").checked = false;
     el("fRepeat").value = "none";
     el("fNote").value = "";
+    modalColor = null; renderColorPicker(); syncAnniv();
     renderMemberPicker(memberId ? [memberId] : (state.members[0] ? [state.members[0].id] : []));
     el("evDelete").classList.add("hidden");
     modalAttachments = []; modalRemovedAtt = []; renderModalAttach();
@@ -1294,8 +1334,10 @@
     el("fTime").value = ev.time || "09:00";
     el("fEndTime").value = ev.endTime || addHour(ev.time || "09:00");
     el("fAllday").checked = !!ev.allday;
+    el("fAnniv").checked = !!ev.anniversary;
     el("fRepeat").value = ev.repeat || "none";
     el("fNote").value = ev.note || "";
+    modalColor = ev.color || null; renderColorPicker(); syncAnniv();
     renderMemberPicker(ev.memberIds || (ev.memberId ? [ev.memberId] : []));
     el("evDelete").classList.remove("hidden");
     modalAttachments = (ev.attachments || []).map(function(a){ return { id:a.id, name:a.name, type:a.type, size:a.size, thumb:a.thumb||null }; });
@@ -1316,11 +1358,16 @@
     var startTime = el("fTime").value;
     var endTime = el("fEndTime").value;
     if (!allday && (!endTime || endTime <= startTime)) endTime = addHour(startTime); // 종료시간이 시작보다 앞서면 +1시간
+    var anniversary = el("fAnniv").checked;
+    if (anniversary) allday = true;
     var data = {
       id: id, title: title, memberIds: pickedMembers(), date: startDate,
       endDate: allday ? endDate : "",
       allday: allday, time: allday ? "" : startTime, endTime: allday ? "" : endTime,
-      repeat: el("fRepeat").value, note: el("fNote").value.trim(),
+      repeat: anniversary ? "yearly" : el("fRepeat").value,
+      anniversary: anniversary,
+      color: modalColor || "",
+      note: el("fNote").value.trim(),
       attachments: modalAttachments.map(function(a){ return { id:a.id, name:a.name, type:a.type, size:a.size, thumb:a.thumb||null }; })
     };
     var ops = [];
@@ -1716,6 +1763,11 @@
   el("evDelete").onclick = deleteEvent;
   el("evNaver").onclick = naverRegisterCurrent;
   el("fAllday").onchange = syncAllday;
+  el("fAnniv").onchange = function(){
+    syncAnniv();
+    // 기념일은 공통 일정 → 켤 때 전체 구성원 자동 선택
+    if (el("fAnniv").checked) renderMemberPicker(state.members.map(function(m){ return m.id; }));
+  };
   el("fTitle").onkeydown = function(e){ if (e.key==="Enter") saveEvent(); };
 
   el("btnMembers").onclick = function(){ renderMemList(); openOverlay("memOverlay"); };
