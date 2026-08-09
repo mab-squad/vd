@@ -84,6 +84,7 @@
   }
   .chip .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
   .chip.off { opacity: .35; }
+  .mini { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 2px; vertical-align: middle; }
 
   /* Layout: calendar + day panel */
   .main { display: grid; grid-template-columns: minmax(0,1fr) 350px; gap: 16px; align-items: start; }
@@ -414,6 +415,10 @@
       var d = JSON.parse(raw);
       if (!d.members || !d.events) return defaultState();
       if (!d.todos) d.todos = [];
+      // 구버전(단일 memberId) → 다중 memberIds 마이그레이션
+      d.events.forEach(function(ev){
+        if (!ev.memberIds) ev.memberIds = ev.memberId ? [ev.memberId] : [];
+      });
       return d;
     } catch (e) { return defaultState(); }
   }
@@ -442,11 +447,25 @@
     return null;
   }
   function memberName(id) { var m = memberById(id); return m ? m.name : "?"; }
-  function eventColor(ev) { var m = memberById(ev.memberId); return m ? m.color : "#6b7280"; }
+  function eventMembers(ev) {
+    var ids = ev.memberIds || (ev.memberId ? [ev.memberId] : []);
+    // state.members 순서대로 정렬해 일관된 표시
+    return state.members.filter(function(m){ return ids.indexOf(m.id) >= 0; });
+  }
+  function eventMemberNames(ev) {
+    var ms = eventMembers(ev);
+    return ms.length ? ms.map(function(m){ return m.name; }).join("·") : "?";
+  }
+  function eventColor(ev) { var ms = eventMembers(ev); return ms.length ? ms[0].color : "#6b7280"; }
   function memberVisible(id) { return !activeFilter || activeFilter.has(id); }
-  function evVars(ev) {
-    var c = eventColor(ev);
-    return "--evc:" + c + ";--evbg:" + hexToRgba(c, 0.14) + ";";
+  function eventVisible(ev) {
+    var ids = ev.memberIds || (ev.memberId ? [ev.memberId] : []);
+    return !activeFilter || ids.some(function(id){ return activeFilter.has(id); });
+  }
+  function evVarsColor(c) { return "--evc:" + c + ";--evbg:" + hexToRgba(c, 0.14) + ";"; }
+  function evVars(ev) { return evVarsColor(eventColor(ev)); }
+  function memberDotsHtml(ev) {
+    return eventMembers(ev).map(function(m){ return '<span class="mini" style="background:'+m.color+'"></span>'; }).join("");
   }
 
   // Recurrence
@@ -483,7 +502,7 @@
     var list = [];
     for (var i=0;i<state.events.length;i++) {
       var ev = state.events[i];
-      if (!memberVisible(ev.memberId)) continue;
+      if (!eventVisible(ev)) continue;
       if (occursOn(ev, d)) list.push(ev);
     }
     list.sort(function(a,b){
@@ -613,7 +632,8 @@
     d.className = "ev"; d.dataset.id = ev.id; d.setAttribute("style", evVars(ev));
     var time = ev.allday ? "" : '<span class="t">'+ (ev.time||"") +'</span>';
     var clip = (ev.attachments && ev.attachments.length) ? "📎" : "";
-    d.innerHTML = time + escapeHtml(ev.title) + clip;
+    var dots = eventMembers(ev).length > 1 ? memberDotsHtml(ev) : "";
+    d.innerHTML = time + dots + escapeHtml(ev.title) + clip;
     return d;
   }
 
@@ -640,7 +660,7 @@
         var e = document.createElement("div");
         e.className = "wev"; e.setAttribute("style", evVars(ev));
         var t = ev.allday ? "종일" : (ev.time || "");
-        e.innerHTML = '<span class="wt">'+t+' · '+escapeHtml(memberName(ev.memberId))+'</span><div>'+escapeHtml(ev.title)+'</div>';
+        e.innerHTML = '<span class="wt">'+t+' · '+escapeHtml(eventMemberNames(ev))+'</span><div>'+escapeHtml(ev.title)+'</div>';
         e.onclick = function(){ openEdit(ev.id); };
         wbody.appendChild(e);
       });
@@ -674,7 +694,7 @@
       var strip = document.createElement("div"); strip.className = "dp-allday";
       allday.forEach(function(ev){
         var c = document.createElement("div"); c.className="adchip"; c.setAttribute("style", evVars(ev));
-        c.textContent = memberName(ev.memberId)+" · "+ev.title;
+        c.textContent = eventMemberNames(ev)+" · "+ev.title;
         c.onclick = function(){ openEdit(ev.id); };
         strip.appendChild(c);
       });
@@ -739,7 +759,7 @@
       })(m);
       grid.appendChild(colBg);
 
-      timed.filter(function(ev){ return ev.memberId === m.id; }).forEach(function(ev){
+      timed.filter(function(ev){ return (ev.memberIds || []).indexOf(m.id) >= 0; }).forEach(function(ev){
         var parts = (ev.time||"09:00").split(":");
         var startH = (+parts[0]) + (+parts[1])/60;
         var endH = startH + 1;
@@ -748,7 +768,8 @@
         var height = Math.max(18, (endH - startH) * HOUR_H - 3);
         var timeLabel = (ev.time||"") + (ev.endTime ? "~" + ev.endTime : "");
         var e = document.createElement("div");
-        e.className = "dev"; e.setAttribute("style", evVars(ev) + "left:" + leftExpr + ";width:" + widthExpr + ";top:" + top + "px;height:" + height + "px;");
+        // 이 열(구성원 m)의 색으로 표시
+        e.className = "dev"; e.setAttribute("style", evVarsColor(m.color) + "left:" + leftExpr + ";width:" + widthExpr + ";top:" + top + "px;height:" + height + "px;");
         e.innerHTML = '<div class="devt">'+timeLabel+'</div>'+escapeHtml(ev.title);
         e.onclick = function(ev2){ ev2.stopPropagation(); openEdit(ev.id); };
         grid.appendChild(e);
@@ -801,11 +822,11 @@
   function renderList() {
     var body = el("listBody"); body.innerHTML = "";
     var q = searchQuery.trim().toLowerCase();
-    var rows = state.events.filter(function(ev){ return memberVisible(ev.memberId); }).filter(function(ev){
+    var rows = state.events.filter(function(ev){ return eventVisible(ev); }).filter(function(ev){
       if (!q) return true;
       return (ev.title||"").toLowerCase().indexOf(q) >= 0
         || (ev.note||"").toLowerCase().indexOf(q) >= 0
-        || memberName(ev.memberId).toLowerCase().indexOf(q) >= 0;
+        || eventMemberNames(ev).toLowerCase().indexOf(q) >= 0;
     });
     rows.sort(function(a,b){ return (a.date+ (a.time||"")).localeCompare(b.date + (b.time||"")); });
     if (!rows.length) {
@@ -820,9 +841,10 @@
       var clip = (ev.attachments && ev.attachments.length) ? " 📎" : "";
       var dateStr = (d.getMonth()+1)+"/"+d.getDate()+" ("+DOW[d.getDay()]+")";
       if (ev.allday && ev.endDate && ev.endDate !== ev.date) { var ed = parseYmd(ev.endDate); dateStr += " ~ " + (ed.getMonth()+1)+"/"+ed.getDate(); }
+      var dots = eventMembers(ev).map(function(m){ return '<span class="ldot" style="background:'+m.color+'"></span>'; }).join("");
       row.innerHTML =
         '<span class="ldate">'+dateStr+'</span>' +
-        '<span class="ldot" style="background:'+eventColor(ev)+'"></span>' +
+        '<span style="flex:none;display:flex;gap:3px">'+dots+'</span>' +
         '<span class="ltitle">'+escapeHtml(ev.title)+clip+'</span>' +
         '<span class="ltime">'+(ev.allday?"종일":((ev.time||"")+(ev.endTime?"~"+ev.endTime:"")))+'</span>' + rep;
       row.onclick = function(){ openEdit(ev.id); };
@@ -917,20 +939,40 @@
   }
 
   // ---------- Event modal ----------
-  function renderMemberPicker(selectedId) {
+  function renderMemberPicker(selectedIds) {
+    var sel = new Set(selectedIds || []);
     var wrap = el("fMembers"); wrap.innerHTML = "";
+    // "전체" 토글 (온 가족 공통 일정용)
+    var isAll = state.members.length > 0 && state.members.every(function(m){ return sel.has(m.id); });
+    var all = document.createElement("div");
+    all.className = "chip" + (isAll ? " sel" : "");
+    all.innerHTML = "👪 전체";
+    all.onclick = function(){
+      var nowAll = state.members.every(function(m){ return sel.has(m.id); });
+      var next = nowAll ? [] : state.members.map(function(m){ return m.id; });
+      if (!next.length && state.members[0]) next = [state.members[0].id];
+      renderMemberPicker(next);
+    };
+    wrap.appendChild(all);
     state.members.forEach(function(m){
       var c = document.createElement("div");
-      c.className = "chip" + (m.id===selectedId ? " sel" : "");
+      c.className = "chip" + (sel.has(m.id) ? " sel" : "");
       c.innerHTML = '<span class="dot" style="background:'+m.color+'"></span>'+escapeHtml(m.name);
       c.dataset.id = m.id;
-      c.onclick = function(){ wrap.querySelectorAll(".chip").forEach(function(n){ n.classList.remove("sel"); }); c.classList.add("sel"); };
+      c.onclick = function(){
+        if (sel.has(m.id)) sel.delete(m.id); else sel.add(m.id);
+        if (sel.size === 0) sel.add(m.id); // 최소 한 명은 유지
+        renderMemberPicker(Array.from(sel));
+      };
       wrap.appendChild(c);
     });
   }
-  function pickedMember() {
-    var sel = el("fMembers").querySelector(".chip.sel");
-    return sel ? sel.dataset.id : (state.members[0] && state.members[0].id);
+  function pickedMembers() {
+    var picked = {};
+    el("fMembers").querySelectorAll(".chip.sel").forEach(function(n){ if (n.dataset.id) picked[n.dataset.id] = true; });
+    var ids = state.members.filter(function(m){ return picked[m.id]; }).map(function(m){ return m.id; });
+    if (!ids.length && state.members[0]) ids.push(state.members[0].id);
+    return ids;
   }
   function openNew(date, memberId, time) {
     editingId = null;
@@ -943,7 +985,7 @@
     el("fAllday").checked = false;
     el("fRepeat").value = "none";
     el("fNote").value = "";
-    renderMemberPicker(memberId || (state.members[0] && state.members[0].id));
+    renderMemberPicker(memberId ? [memberId] : (state.members[0] ? [state.members[0].id] : []));
     el("evDelete").classList.add("hidden");
     modalAttachments = []; modalRemovedAtt = []; renderModalAttach();
     el("attField").style.display = IDB_OK ? "" : "none";
@@ -964,7 +1006,7 @@
     el("fAllday").checked = !!ev.allday;
     el("fRepeat").value = ev.repeat || "none";
     el("fNote").value = ev.note || "";
-    renderMemberPicker(ev.memberId);
+    renderMemberPicker(ev.memberIds || (ev.memberId ? [ev.memberId] : []));
     el("evDelete").classList.remove("hidden");
     modalAttachments = (ev.attachments || []).map(function(a){ return { id:a.id, name:a.name, type:a.type, size:a.size, thumb:a.thumb||null }; });
     modalRemovedAtt = [];
@@ -984,7 +1026,7 @@
     var endTime = el("fEndTime").value;
     if (!allday && (!endTime || endTime <= startTime)) endTime = addHour(startTime); // 종료시간이 시작보다 앞서면 +1시간
     var data = {
-      id: id, title: title, memberId: pickedMember(), date: startDate,
+      id: id, title: title, memberIds: pickedMembers(), date: startDate,
       endDate: allday ? endDate : "",
       allday: allday, time: allday ? "" : startTime, endTime: allday ? "" : endTime,
       repeat: el("fRepeat").value, note: el("fNote").value.trim(),
@@ -1043,8 +1085,9 @@
       name.onchange = function(){ m.name = name.value.trim() || m.name; save(); renderMembers(); render(); };
       del.onclick = function(){
         if (state.members.length <= 1) { alert("최소 한 명은 있어야 해요."); return; }
-        if (!confirm(m.name + " 구성원을 삭제할까요? 관련 일정도 함께 삭제됩니다.")) return;
-        state.events = state.events.filter(function(e){ return e.memberId !== m.id; });
+        if (!confirm(m.name + " 구성원을 삭제할까요? 이 구성원만 있는 일정은 삭제되고, 공통 일정에서는 제외됩니다.")) return;
+        state.events.forEach(function(e){ if (e.memberIds) e.memberIds = e.memberIds.filter(function(id){ return id !== m.id; }); });
+        state.events = state.events.filter(function(e){ return e.memberIds && e.memberIds.length > 0; });
         state.members = state.members.filter(function(x){ return x.id !== m.id; });
         if (activeFilter) activeFilter.delete(m.id);
         save(); renderMemList(); renderMembers(); render();
