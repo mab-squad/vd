@@ -185,8 +185,8 @@
 
   /* List view */
   .listwrap { padding: 14px; }
-  .search { display: flex; gap: 8px; margin-bottom: 12px; }
-  .search input { flex: 1; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+  .search { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .search input { flex: 1 1 180px; min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
   .lrow { display: flex; align-items: center; gap: 12px; padding: 10px 6px; border-bottom: 1px solid var(--border-soft); cursor: pointer; border-radius: 8px; }
   .lrow:hover { background: var(--panel-2); }
   .lrow .ldate { width: 132px; flex: none; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -320,6 +320,8 @@
     <div class="search">
       <input type="text" id="searchInput" placeholder="일정 검색 (제목·메모·구성원)" autocomplete="off" />
       <button class="btn" id="searchClear">지우기</button>
+      <button class="btn" id="bulkWeek" title="이번 주 일정을 네이버 캘린더에 한 번에 등록" style="display:none">📅 이번주→네이버</button>
+      <button class="btn" id="bulkMonth" title="이번 달 일정을 네이버 캘린더에 한 번에 등록" style="display:none">📅 이번달→네이버</button>
     </div>
     <div id="listBody"></div>
   </div>
@@ -540,7 +542,8 @@
       studyGoalsMonth: {}, // 월간 목표 (구성원|YYYY-MM)
       studyMind: {},       // 오늘의 마음가짐 (구성원|날짜별)
       studySpend: [],      // 오늘의 소비 (구성원+날짜별)
-      studyThanks: {}      // 감사일기 (구성원|날짜별)
+      studyThanks: {},     // 감사일기 (구성원|날짜별)
+      naverSent: {}        // 네이버로 이미 보낸 일정 기록 (중복 방지)
     };
   }
   function load() {
@@ -558,6 +561,7 @@
       if (!d.studyMind) d.studyMind = {};
       if (!d.studySpend) d.studySpend = [];
       if (!d.studyThanks) d.studyThanks = {};
+      if (!d.naverSent) d.naverSent = {};
       // 구버전(단일 memberId) → 다중 memberIds 마이그레이션
       d.events.forEach(function(ev){
         if (!ev.memberIds) ev.memberIds = ev.memberId ? [ev.memberId] : [];
@@ -1468,7 +1472,7 @@
   function exportData() {
     var getAtts = IDB_OK ? idbAll().catch(function(){ return []; }) : Promise.resolve([]);
     getAtts.then(function(atts){
-      var out = { members: state.members, events: state.events, todos: state.todos, study: state.study, studyTasks: state.studyTasks, studyGoals: state.studyGoals, studyGoalsWeek: state.studyGoalsWeek, studyGoalsMonth: state.studyGoalsMonth, studyMind: state.studyMind, studySpend: state.studySpend, studyThanks: state.studyThanks, attachments: atts };
+      var out = { members: state.members, events: state.events, todos: state.todos, study: state.study, studyTasks: state.studyTasks, studyGoals: state.studyGoals, studyGoalsWeek: state.studyGoalsWeek, studyGoalsMonth: state.studyGoalsMonth, studyMind: state.studyMind, studySpend: state.studySpend, studyThanks: state.studyThanks, naverSent: state.naverSent, attachments: atts };
       var blob = new Blob([JSON.stringify(out)], { type: "application/json" });
       var url = URL.createObjectURL(blob);
       var a = document.createElement("a"); a.href = url; a.download = "가족일정_" + ymd(new Date()) + ".json"; a.click();
@@ -1488,7 +1492,7 @@
         state = { members: d.members, events: d.events, todos: d.todos, study: d.study,
           studyTasks: d.studyTasks || [], studyGoals: d.studyGoals || {},
           studyGoalsWeek: d.studyGoalsWeek || {}, studyGoalsMonth: d.studyGoalsMonth || {},
-          studyMind: d.studyMind || {}, studySpend: d.studySpend || [], studyThanks: d.studyThanks || {} };
+          studyMind: d.studyMind || {}, studySpend: d.studySpend || [], studyThanks: d.studyThanks || {}, naverSent: d.naverSent || {} };
         activeFilter = null; save();
         var restore = IDB_OK
           ? idbClear().then(function(){ return Promise.all(atts.map(function(a){ return idbPut(a); })); })
@@ -1515,6 +1519,9 @@
     else { btn.style.display = ""; btn.textContent = naver.connected ? "네이버 ✓" : "네이버 연결";
       btn.title = naver.connected ? "네이버 캘린더 연결됨 (클릭 시 해제)" : "네이버 캘린더에 연결"; }
     el("evNaver").style.display = (naver.available && naver.configured && naver.connected) ? "" : "none";
+    var showBulk = (naver.available && naver.configured && naver.connected) ? "" : "none";
+    if (el("bulkWeek")) el("bulkWeek").style.display = showBulk;
+    if (el("bulkMonth")) el("bulkMonth").style.display = showBulk;
   }
   function naverConnect() {
     if (!naver.connected) { window.location.href = "/api/naver/login"; }
@@ -1539,7 +1546,7 @@
       headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       .then(function(r){ return r.json().then(function(b){ return { ok: r.ok, body: b }; }); })
       .then(function(res){
-        if (res.ok && res.body.result === "success") alert("네이버 캘린더에 등록되었습니다.");
+        if (res.ok && res.body.result === "success") { if (editingId) { state.naverSent[editingId] = Date.now(); save(); } alert("네이버 캘린더에 등록되었습니다."); }
         else if (res.body && res.body.error === "not_connected") { naver.connected = false; updateNaverUI(); alert("네이버 연결이 만료되었습니다. 다시 연결해 주세요."); }
         else alert("등록 실패: " + (res.body && res.body.message ? res.body.message : "알 수 없는 오류"));
       })
@@ -1654,7 +1661,7 @@
         members: state.members, events: state.events, todos: state.todos,
         study: state.study, studyTasks: state.studyTasks,
         studyGoals: state.studyGoals, studyGoalsWeek: state.studyGoalsWeek, studyGoalsMonth: state.studyGoalsMonth,
-        studyMind: state.studyMind, studySpend: state.studySpend, studyThanks: state.studyThanks
+        studyMind: state.studyMind, studySpend: state.studySpend, studyThanks: state.studyThanks, naverSent: state.naverSent
       },
       updatedAt: Date.now(), deviceId: deviceId
     };
@@ -1712,6 +1719,7 @@
     state.studyMind = d.studyMind || {};
     state.studySpend = d.studySpend || [];
     state.studyThanks = d.studyThanks || {};
+    state.naverSent = d.naverSent || {};
     lastApplied = val.updatedAt || Date.now();
     rawSave();
     applyingRemote = false;
@@ -1751,6 +1759,57 @@
         try { firebase.auth().signInAnonymously().then(go).catch(go); } catch (e) { go(); }
       })
       .catch(function(){});
+  }
+
+  // ---------- Naver 일괄 등록 ----------
+  function eventToNaverPayload(ev) {
+    return {
+      title: ev.title, date: ev.date,
+      endDate: ev.allday ? (ev.endDate || ev.date) : "",
+      allday: !!ev.allday,
+      time: ev.allday ? "" : (ev.time || ""),
+      endTime: ev.allday ? "" : (ev.endTime || ""),
+      repeat: ev.repeat || "none", note: ev.note || ""
+    };
+  }
+  function eventOccursInRange(ev, startD, endD) {
+    for (var d = new Date(startD); d <= endD; d = addDays(d, 1)) { if (occursOn(ev, d)) return true; }
+    return false;
+  }
+  function bulkNaver(kind) {
+    if (!naver.connected) { alert("먼저 상단 '네이버 연결'로 로그인해 주세요."); return; }
+    var today = startOfDay(new Date()), startD, endD, label;
+    if (kind === "week") { startD = startOfWeek(today); endD = addDays(startD, 6); label = "이번 주"; }
+    else { startD = new Date(today.getFullYear(), today.getMonth(), 1); endD = new Date(today.getFullYear(), today.getMonth()+1, 0); label = "이번 달"; }
+    var targets = state.events.filter(function(ev){ return eventOccursInRange(ev, startD, endD); });
+    var todo = targets.filter(function(ev){ return !(state.naverSent && state.naverSent[ev.id]); });
+    var skipped = targets.length - todo.length;
+    if (!todo.length) { alert(label + " 범위에 보낼 새 일정이 없습니다. (총 " + targets.length + "건 모두 이미 등록됨)"); return; }
+    if (!confirm(label + " 일정 " + todo.length + "건을 네이버 캘린더에 등록할까요?" + (skipped ? (" (이미 보낸 " + skipped + "건 제외)") : ""))) return;
+
+    var btnW = el("bulkWeek"), btnM = el("bulkMonth");
+    btnW.disabled = true; btnM.disabled = true;
+    var ok = 0, fail = 0, disconnected = false;
+    var seq = Promise.resolve();
+    todo.forEach(function(ev){
+      seq = seq.then(function(){
+        if (disconnected) return;
+        return fetch("/api/naver/schedule", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(eventToNaverPayload(ev)) })
+          .then(function(r){ return r.json().then(function(b){ return { ok: r.ok, b: b }; }); })
+          .then(function(res){
+            if (res.ok && res.b.result === "success") { ok++; state.naverSent[ev.id] = Date.now(); }
+            else if (res.b && res.b.error === "not_connected") { disconnected = true; }
+            else { fail++; }
+          })
+          .catch(function(){ fail++; });
+      });
+    });
+    seq.then(function(){
+      save();
+      btnW.disabled = false; btnM.disabled = false;
+      if (disconnected) { naver.connected = false; updateNaverUI(); alert("네이버 연결이 만료되었습니다. 다시 연결 후 시도해 주세요. (성공 " + ok + "건)"); return; }
+      alert("네이버 등록 완료 — 성공 " + ok + "건" + (fail ? (", 실패 " + fail + "건") : "") + (skipped ? (", 건너뜀 " + skipped + "건") : "") + ".");
+    });
   }
 
   // ---------- Overlays / utils ----------
@@ -1824,6 +1883,8 @@
 
   el("searchInput").oninput = function(){ searchQuery = this.value; renderList(); };
   el("searchClear").onclick = function(){ searchQuery=""; el("searchInput").value=""; renderList(); el("searchInput").focus(); };
+  el("bulkWeek").onclick = function(){ bulkNaver("week"); };
+  el("bulkMonth").onclick = function(){ bulkNaver("month"); };
 
   document.querySelectorAll(".overlay").forEach(function(ov){ ov.addEventListener("click", function(e){ if (e.target===ov) ov.classList.remove("open"); }); });
   document.addEventListener("keydown", function(e){ if (e.key==="Escape") document.querySelectorAll(".overlay.open").forEach(function(o){ o.classList.remove("open"); }); });
