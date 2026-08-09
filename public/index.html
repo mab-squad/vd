@@ -196,12 +196,18 @@
   .study-head .sh-date { font-size: 13px; color: var(--muted); }
   .study-kids { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 14px 0; }
   .study-kids .chip.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .study-add { display: flex; gap: 8px; padding: 12px 14px; flex-wrap: wrap; }
+  .study-sec { padding: 12px 14px; border-top: 1px solid var(--border-soft); }
+  .sec-h { font-weight: 700; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .sec-sub { font-weight: 400; font-size: 12px; color: var(--muted); }
+  .sec-textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); resize: vertical; min-height: 44px; }
+  .study-add { display: flex; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
   .study-add input { padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); }
-  .study-add .st-subj { width: 110px; }
-  .study-add .st-cont { flex: 1; min-width: 180px; }
-  .study-add .st-min { width: 72px; }
-  .study-list { padding: 0 14px; }
+  .study-add .st-subj { width: 90px; }
+  .study-add .st-cont { flex: 1; min-width: 160px; }
+  .study-add .st-min { width: 64px; }
+  .study-add2 { display: flex; gap: 8px; margin-bottom: 6px; }
+  .study-add2 input { flex: 1; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); }
+  .study-list { padding: 0; }
   .st-item { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border-soft); }
   .st-item:last-child { border-bottom: 0; }
   .st-item input[type=checkbox] { width: 18px; height: 18px; flex: none; cursor: pointer; }
@@ -305,14 +311,36 @@
       <span class="sh-date" id="studyDate"></span>
     </div>
     <div class="study-kids" id="studyKids"></div>
-    <div class="study-add">
-      <input id="stSubject" class="st-subj" placeholder="과목" autocomplete="off" />
-      <input id="stContent" class="st-cont" placeholder="학습 내용/분량 (예: 수학 32~40p)" autocomplete="off" />
-      <input id="stMin" class="st-min" type="number" min="0" placeholder="분" />
-      <button class="btn primary" id="stAdd">추가</button>
+
+    <div class="study-sec">
+      <div class="sec-h">🎯 나의 목표</div>
+      <textarea id="stGoal" class="sec-textarea" placeholder="예: 이번 달 안에 수학 문제집 끝내기"></textarea>
     </div>
-    <div class="study-list" id="studyList"></div>
-    <div class="study-foot" id="studyFoot"></div>
+
+    <div class="study-sec">
+      <div class="sec-h">💭 나의 오늘의 마음가짐</div>
+      <textarea id="stMind" class="sec-textarea" placeholder="예: 오늘은 집중해서 30분씩 공부하자!"></textarea>
+    </div>
+
+    <div class="study-sec">
+      <div class="sec-h">📚 오늘의 학습계획 <span class="sec-sub" id="studyFoot"></span></div>
+      <div class="study-add">
+        <input id="stSubject" class="st-subj" placeholder="과목" autocomplete="off" />
+        <input id="stContent" class="st-cont" placeholder="학습 내용/분량 (예: 수학 32~40p)" autocomplete="off" />
+        <input id="stMin" class="st-min" type="number" min="0" placeholder="분" />
+        <button class="btn primary" id="stAdd">추가</button>
+      </div>
+      <div class="study-list" id="studyList"></div>
+    </div>
+
+    <div class="study-sec">
+      <div class="sec-h">✅ 해야 할 일 <span class="sec-sub" id="taskFoot"></span></div>
+      <div class="study-add2">
+        <input id="stTaskInput" placeholder="해야 할 일 (예: 알림장 확인, 준비물 챙기기)" autocomplete="off" />
+        <button class="btn primary" id="stTaskAdd">추가</button>
+      </div>
+      <div class="study-list" id="taskList"></div>
+    </div>
   </div>
 
   <!-- To-do -->
@@ -455,7 +483,10 @@
       ],
       events: [],
       todos: [],
-      study: []
+      study: [],           // 오늘의 학습계획 (구성원+날짜별)
+      studyTasks: [],      // 해야 할 일 (구성원+날짜별)
+      studyGoals: {},      // 나의 목표 (구성원별, 지속)
+      studyMind: {}        // 오늘의 마음가짐 (구성원|날짜별)
     };
   }
   function load() {
@@ -466,6 +497,9 @@
       if (!d.members || !d.events) return defaultState();
       if (!d.todos) d.todos = [];
       if (!d.study) d.study = [];
+      if (!d.studyTasks) d.studyTasks = [];
+      if (!d.studyGoals) d.studyGoals = {};
+      if (!d.studyMind) d.studyMind = {};
       // 구버전(단일 memberId) → 다중 memberIds 마이그레이션
       d.events.forEach(function(ev){
         if (!ev.memberIds) ev.memberIds = ev.memberId ? [ev.memberId] : [];
@@ -892,36 +926,58 @@
       wrap.appendChild(c);
     });
   }
+  function studyMindKey() { return selectedStudyChild + "|" + ymd(selectedDay); }
   function renderStudy() {
     if (!selectedStudyChild || !memberById(selectedStudyChild)) selectedStudyChild = defaultStudyChild();
     renderStudyKids();
     var isToday = sameDay(selectedDay, startOfDay(new Date()));
     el("studyDate").textContent = dayLabel(selectedDay) + (isToday ? " · 오늘" : "");
-    var m = memberById(selectedStudyChild);
-    var key = ymd(selectedDay);
+    el("stGoal").value = (state.studyGoals && state.studyGoals[selectedStudyChild]) || "";
+    el("stMind").value = (state.studyMind && state.studyMind[studyMindKey()]) || "";
+    renderStudyPlan();
+    renderStudyTasks();
+  }
+  function renderStudyPlan() {
+    var m = memberById(selectedStudyChild), key = ymd(selectedDay);
     var items = state.study.filter(function(s){ return s.memberId === selectedStudyChild && s.date === key; });
     var list = el("studyList"); list.innerHTML = "";
-    if (!items.length) {
-      var e = document.createElement("div"); e.className = "study-empty";
-      e.textContent = (m ? m.name : "") + " 학습 계획이 없어요. 위에서 과목을 추가하세요.";
-      list.appendChild(e);
-    }
+    if (!items.length) { var e = document.createElement("div"); e.className = "study-empty"; e.textContent = "학습 계획이 없어요. 위에서 추가하세요."; list.appendChild(e); }
     items.forEach(function(s){
       var row = document.createElement("div"); row.className = "st-item" + (s.done ? " done" : "");
       var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
-      cb.onchange = function(){ s.done = cb.checked; save(); renderStudy(); };
+      cb.onchange = function(){ s.done = cb.checked; save(); renderStudyPlan(); };
       var badge = document.createElement("span"); badge.className = "st-badge"; badge.style.background = m ? m.color : "#888"; badge.textContent = s.subject || "공부";
       var body = document.createElement("div"); body.className = "st-body"; body.innerHTML = '<div class="stc">'+escapeHtml(s.content || "")+'</div>';
       var time = document.createElement("span"); time.className = "st-time"; time.textContent = s.minutes ? (s.minutes + "분") : "";
       var del = document.createElement("button"); del.className = "del"; del.textContent = "✕";
-      del.onclick = function(){ state.study = state.study.filter(function(x){ return x.id !== s.id; }); save(); renderStudy(); };
+      del.onclick = function(){ state.study = state.study.filter(function(x){ return x.id !== s.id; }); save(); renderStudyPlan(); };
       row.appendChild(cb); row.appendChild(badge); row.appendChild(body); row.appendChild(time); row.appendChild(del);
       list.appendChild(row);
     });
     var done = items.filter(function(s){ return s.done; }).length;
     var mins = items.reduce(function(a,s){ return a + (parseInt(s.minutes,10) || 0); }, 0);
-    el("studyFoot").textContent = items.length ? (done + "/" + items.length + " 완료" + (mins ? (" · 총 예상 " + mins + "분") : "")) : "";
+    el("studyFoot").textContent = items.length ? (done + "/" + items.length + " 완료" + (mins ? (" · 총 " + mins + "분") : "")) : "";
   }
+  function renderStudyTasks() {
+    var key = ymd(selectedDay);
+    var items = state.studyTasks.filter(function(s){ return s.memberId === selectedStudyChild && s.date === key; });
+    var list = el("taskList"); list.innerHTML = "";
+    if (!items.length) { var e = document.createElement("div"); e.className = "study-empty"; e.textContent = "해야 할 일이 없어요."; list.appendChild(e); }
+    items.forEach(function(s){
+      var row = document.createElement("div"); row.className = "st-item" + (s.done ? " done" : "");
+      var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
+      cb.onchange = function(){ s.done = cb.checked; save(); renderStudyTasks(); };
+      var body = document.createElement("div"); body.className = "st-body"; body.innerHTML = '<div class="stc">'+escapeHtml(s.text || "")+'</div>';
+      var del = document.createElement("button"); del.className = "del"; del.textContent = "✕";
+      del.onclick = function(){ state.studyTasks = state.studyTasks.filter(function(x){ return x.id !== s.id; }); save(); renderStudyTasks(); };
+      row.appendChild(cb); row.appendChild(body); row.appendChild(del);
+      list.appendChild(row);
+    });
+    var done = items.filter(function(s){ return s.done; }).length;
+    el("taskFoot").textContent = items.length ? (done + "/" + items.length + " 완료") : "";
+  }
+  function saveGoal() { if (!selectedStudyChild) return; state.studyGoals[selectedStudyChild] = el("stGoal").value; save(); }
+  function saveMind() { if (!selectedStudyChild) return; state.studyMind[studyMindKey()] = el("stMind").value; save(); }
   function addStudy() {
     var subj = el("stSubject").value.trim();
     var cont = el("stContent").value.trim();
@@ -931,7 +987,14 @@
     state.study.push({ id: uid(), memberId: selectedStudyChild, date: ymd(selectedDay),
       subject: subj || "공부", content: cont, minutes: (isNaN(min) || min < 0) ? 0 : min, done: false });
     el("stSubject").value = ""; el("stContent").value = ""; el("stMin").value = "";
-    save(); renderStudy(); el("stSubject").focus();
+    save(); renderStudyPlan(); el("stSubject").focus();
+  }
+  function addStudyTask() {
+    var v = el("stTaskInput").value.trim();
+    if (!v) { el("stTaskInput").focus(); return; }
+    if (!selectedStudyChild) selectedStudyChild = defaultStudyChild();
+    state.studyTasks.push({ id: uid(), memberId: selectedStudyChild, date: ymd(selectedDay), text: v, done: false });
+    el("stTaskInput").value = ""; save(); renderStudyTasks(); el("stTaskInput").focus();
   }
 
   // ---------- List / Search ----------
@@ -1227,7 +1290,7 @@
   function exportData() {
     var getAtts = IDB_OK ? idbAll().catch(function(){ return []; }) : Promise.resolve([]);
     getAtts.then(function(atts){
-      var out = { members: state.members, events: state.events, todos: state.todos, study: state.study, attachments: atts };
+      var out = { members: state.members, events: state.events, todos: state.todos, study: state.study, studyTasks: state.studyTasks, studyGoals: state.studyGoals, studyMind: state.studyMind, attachments: atts };
       var blob = new Blob([JSON.stringify(out)], { type: "application/json" });
       var url = URL.createObjectURL(blob);
       var a = document.createElement("a"); a.href = url; a.download = "가족일정_" + ymd(new Date()) + ".json"; a.click();
@@ -1244,7 +1307,8 @@
         if (!d.study) d.study = [];
         if (!confirm("현재 데이터를 가져온 백업으로 덮어쓸까요?")) return;
         var atts = d.attachments || [];
-        state = { members: d.members, events: d.events, todos: d.todos, study: d.study };
+        state = { members: d.members, events: d.events, todos: d.todos, study: d.study,
+          studyTasks: d.studyTasks || [], studyGoals: d.studyGoals || {}, studyMind: d.studyMind || {} };
         activeFilter = null; save();
         var restore = IDB_OK
           ? idbClear().then(function(){ return Promise.all(atts.map(function(a){ return idbPut(a); })); })
@@ -1453,6 +1517,10 @@
   el("stSubject").onkeydown = function(e){ if (e.key==="Enter") el("stContent").focus(); };
   el("stContent").onkeydown = function(e){ if (e.key==="Enter") addStudy(); };
   el("stMin").onkeydown = function(e){ if (e.key==="Enter") addStudy(); };
+  el("stGoal").oninput = saveGoal;
+  el("stMind").oninput = saveMind;
+  el("stTaskAdd").onclick = addStudyTask;
+  el("stTaskInput").onkeydown = function(e){ if (e.key==="Enter") addStudyTask(); };
 
   el("searchInput").oninput = function(){ searchQuery = this.value; renderList(); };
   el("searchClear").onclick = function(){ searchQuery=""; el("searchInput").value=""; renderList(); el("searchInput").focus(); };
