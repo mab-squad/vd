@@ -1,0 +1,25 @@
+# Render Blueprint - 우리 가족 일정표
+# https://render.com → New → Blueprint 로 이 저장소를 연결하면 자동 인식됩니다.
+services:
+  - type: web
+    name: family-schedule
+    env: node
+    plan: free
+    region: singapore          # 한국에서 가장 가까운 리전
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/naver/status
+    autoDeploy: true
+    envVars:
+      # 세션 서명키: Render 가 자동 생성 (직접 입력 불필요)
+      - key: SESSION_SECRET
+        generateValue: true
+      # 아래 3개는 네이버 개발자센터 값으로 Render 대시보드에서 직접 입력하세요.
+      # (sync:false = 저장소에 값이 커밋되지 않음)
+      - key: NAVER_CLIENT_ID
+        sync: false
+      - key: NAVER_CLIENT_SECRET
+        sync: false
+      # 배포 후 발급된 실제 주소로 설정: https://<서비스>.onrender.com/api/naver/callback
+      - key: NAVER_CALLBACK_URL
+        sync: false

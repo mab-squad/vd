@@ -1,97 +1,128 @@
-# MCP Server Setup
+# 우리 가족 일정표 📅
 
-This repository is configured to auto-connect the **GitHub MCP server** whenever
-[Claude Code](https://code.claude.com/docs) runs in this project directory. The
-configuration lives in [`.mcp.json`](./.mcp.json) (project scope), so every team
-member gets the same server without any per-machine setup.
+가족 일정 관리 웹앱입니다. 브라우저만으로 바로 쓸 수 있고, **네이버 캘린더 자동 등록** 연동을 선택적으로 붙일 수 있습니다.
 
-## What is configured
+## 두 가지 실행 방식
 
-| Server   | Transport | Endpoint                              | Purpose                              |
-| -------- | --------- | ------------------------------------- | ------------------------------------ |
-| `github` | HTTP      | `https://api.githubcopilot.com/mcp/`  | Issues, pull requests, code search, releases, and other GitHub operations |
+### 1) 서버 없이 바로 쓰기 (가장 간단)
 
-This uses GitHub's official **remote** MCP server, so there is nothing to install
-locally — Claude Code connects over HTTP and authenticates with a token you
-provide via an environment variable.
+`public/index.html` 파일을 브라우저로 열면 끝입니다. 모든 일정 기능이 그대로 동작합니다.
+데이터는 해당 브라우저의 localStorage에만 저장됩니다. (이 방식에서는 네이버 연동 버튼은 숨겨집니다.)
 
-## Prerequisites
+### 2) 서버로 실행 (네이버 캘린더 연동 사용)
 
-- Claude Code CLI (or another MCP-capable client).
-- A **GitHub Personal Access Token (PAT)**. A fine-grained token scoped to the
-  repositories you want to work with is recommended. Classic tokens work too
-  (grant `repo`, and `read:org` if you need organization data).
-
-## 1. Provide your token
-
-The config reads the token from the `GITHUB_PERSONAL_ACCESS_TOKEN` environment
-variable. **Never commit your token** — set it in your shell instead:
+버튼 한 번으로 일정을 **네이버 캘린더에 자동 등록**하려면 Node.js 서버로 실행합니다.
 
 ```bash
-# Add to ~/.zshrc / ~/.bashrc, or export it in the current shell:
-export GITHUB_PERSONAL_ACCESS_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxx"
+npm install
+cp .env.example .env   # 값을 채운 뒤
+npm start              # http://localhost:3000
 ```
 
-Claude Code expands `${GITHUB_PERSONAL_ACCESS_TOKEN}` in `.mcp.json` at launch,
-so the secret is never written to the repository.
+## 주요 기능
 
-## 2. Approve the server
+- 👨‍👩‍👧‍👦 **가족 구성원별 색상 구분** 및 필터링 (기본: 아빠·엄마·윤호·윤아)
+- 👪 **공통 일정** — 한 일정에 여러 구성원 지정("전체" 버튼으로 온 가족 한 번에)
+- 🗓️ **월간 / 주간 / 목록 보기 전환**
+- 🕐 **당일 일정 패널** — 오른쪽에서 왼쪽 시간축 + 구성원별 열로 그날 일정을 타임라인으로 표시
+- ✅ **오늘의 할 일(To-do)** — 날짜별 체크리스트
+- 📚 **스터디플래너** — 아이(윤호·윤아)별로 ① 나의 목표(이번 주·이번 달) ② 오늘의 마음가짐(이모지 빠른 선택) ③ 오늘의 학습계획(과목·분량·시간·진도) ④ 해야 할 일 ⑤ 오늘의 소비(합계) ⑥ 감사일기 구역 관리
+- 📲 **앱 설치(PWA)** — 홈 화면·바탕화면에 설치해 앱처럼 실행, 오프라인 지원
+- ☁️ **실시간 동기화(선택)** — Firebase 연결 시 가족 기기 간 자동 반영(백업/가져오기 불필요)
+- 🔎 **일정 검색 / 목록 보기** — 제목·메모·구성원으로 검색
+- ➕ **일정 추가·수정·삭제** (날짜 선택 후 `＋`, 당일 패널의 시간대 클릭, 날짜 더블클릭)
+- 🔁 **반복 일정** (매일 / 매주 / 격주 / 매월)
+- 📎 **사진·파일 첨부** — 사진 자동 압축, 브라우저(IndexedDB) 저장, 백업에 포함
+- 🎤 **음성으로 일정 입력** — "내일 오후 3시 윤호 치과"처럼 말하면 날짜·시간·구성원·제목 자동 채움 (브라우저 음성인식, 안드로이드 크롬/삼성인터넷 권장)
+- ⏰ **종일 일정 + 시간 일정**, 메모(장소·준비물)
+- 🎨 **일정 색상 디자인** — 구성원 색상 바 + 은은한 배경 틴트
+- ⚙️ **구성원 관리** (이름·색상 추가/수정/삭제)
+- 💾 **JSON 백업 내보내기/가져오기**
+- 🌙 **다크 모드** 자동 지원
+- 🟢 **네이버 캘린더 등록** (서버 실행 시)
 
-Project-scoped MCP servers require a one-time approval for security. Start Claude
-Code in this directory and either accept the prompt or run:
+## 네이버 캘린더 연동 설정
 
-```bash
-claude
-# then, inside the session:
-/mcp
+네이버 캘린더 API는 **일정 추가(쓰기) 전용**이며 OAuth 2.0 인증이 필요합니다.
+`client_secret` 은 서버에만 보관되고 브라우저로 노출되지 않습니다.
+
+1. [네이버 개발자센터](https://developers.naver.com/apps/#/register)에서 애플리케이션을 등록합니다.
+   - 사용 API: **네이버 캘린더**
+   - 서비스 URL: `http://localhost:3000` (배포 시 실제 도메인)
+   - Callback URL: `http://localhost:3000/api/naver/callback` (배포 시 실제 도메인의 `/api/naver/callback`)
+2. 발급받은 **Client ID / Client Secret** 을 `.env` 에 입력합니다. (`.env.example` 참고)
+3. `npm start` 후 앱 상단의 **"네이버 연결"** 버튼으로 로그인합니다.
+4. 일정 추가/수정 창의 **"📅 네이버 등록"** 버튼을 누르면 해당 일정이 네이버 캘린더에 등록됩니다.
+
+> ⚠️ 배포 환경(https)에서는 `.env` 의 `NAVER_CALLBACK_URL` 을 실제 https 주소로 바꾸고,
+> 네이버 앱에 등록한 Callback URL 과 **정확히 일치**시켜야 합니다.
+
+### 연동의 한계
+
+- 네이버 API 특성상 **"우리 앱 → 네이버" 한 방향(등록)만** 지원됩니다. 네이버의 일정을 읽어오는 양방향 동기화는 제공되지 않습니다.
+- 같은 일정을 네이버 등록 버튼으로 여러 번 누르면 중복 등록됩니다.
+
+## 실시간 동기화 설정 (선택 · Firebase)
+
+가족 기기끼리 데이터를 자동으로 공유하려면 Firebase Realtime Database를 연결합니다.
+설정하지 않으면 앱은 로컬 저장(기기별) + 백업/가져오기로 동작합니다.
+
+1. [Firebase 콘솔](https://console.firebase.google.com) → **프로젝트 만들기**
+2. **빌드 → Realtime Database → 데이터베이스 만들기** (위치 선택, 우선 "테스트 모드"로 시작)
+3. **프로젝트 설정 → 내 앱 → 웹앱(</>) 추가** → 표시되는 `firebaseConfig` 값 확인
+4. **Render → family-schedule → Environment** 에 값 입력 후 저장(자동 재배포):
+   - `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_DATABASE_URL`, `FIREBASE_PROJECT_ID`, `FIREBASE_APP_ID`
+5. (권장) **Authentication → 로그인 방법 → 익명 사용 설정**, Realtime Database **규칙**을 아래처럼 지정:
+   ```json
+   { "rules": { ".read": "auth != null", ".write": "auth != null" } }
+   ```
+   빠르게 테스트만 할 경우 규칙을 `true`로 열 수 있으나, 주소를 아는 사람이 접근할 수 있으니 권장하지 않습니다.
+
+설정되면 앱 상단에 ☁️ 표시가 뜨고, 한 기기에서의 변경이 다른 기기에 자동 반영됩니다.
+동작 방식은 "마지막 저장 우선"입니다. 일정/할일/스터디 내용은 물론 **사진·파일 첨부도 같은 Realtime Database에 저장**되어 기기 간 공유됩니다(사진은 자동 압축). 다른 기기에서는 썸네일이 먼저 보이고, 첨부를 열 때 원본을 내려받아 로컬에 캐시합니다.
+
+## 앱으로 설치하기 (홈 화면 / 바탕화면)
+
+배포된 주소(https)에 접속하면 앱처럼 설치할 수 있습니다.
+
+- **Android (크롬/삼성인터넷)**: 접속 후 메뉴 → "앱 설치" 또는 "홈 화면에 추가"
+- **iPhone (Safari)**: 공유 버튼 → "홈 화면에 추가"
+- **PC (크롬/엣지)**: 주소창 오른쪽의 설치 아이콘(⊕) 클릭 → 설치
+
+설치하면 주소창 없이 전체화면으로 실행되고, 오프라인에서도 열립니다(일정 데이터는 브라우저에 저장). `manifest.webmanifest`, `sw.js`, `icon-*.png`가 이를 담당합니다.
+
+## Render로 배포하기
+
+이 저장소에는 Render Blueprint(`render.yaml`)가 포함되어 있어 배포가 간단합니다.
+
+1. [Render](https://render.com) 가입 후 GitHub 계정을 연결합니다.
+2. **New → Blueprint** → 이 저장소(`mab-squad/vd`) 선택 → 브랜치 지정 → `render.yaml` 자동 인식 → **Apply**.
+   - `SESSION_SECRET` 은 Render가 자동 생성합니다.
+   - `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `NAVER_CALLBACK_URL` 은 비워둔 채 먼저 배포해도 됩니다. (그 상태에선 네이버 버튼만 숨겨지고 나머지는 정상 동작)
+3. 배포가 끝나면 서비스 주소가 발급됩니다: `https://<서비스이름>.onrender.com`
+4. **네이버 개발자센터**에서 앱 설정을 이 주소로 바꿉니다.
+   - 서비스 URL: `https://<서비스이름>.onrender.com`
+   - Callback URL: `https://<서비스이름>.onrender.com/api/naver/callback`
+5. **Render 대시보드 → 서비스 → Environment** 에서 값 입력 후 저장(자동 재배포):
+   - `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`
+   - `NAVER_CALLBACK_URL = https://<서비스이름>.onrender.com/api/naver/callback` (4번 값과 정확히 일치)
+6. 재배포 후 앱 상단 **"네이버 연결"** 로그인 → 일정 창의 **"📅 네이버 등록"** 사용.
+
+> **무료 플랜 참고**
+> - 일정 시간 접속이 없으면 서비스가 잠들어, 다음 접속 시 첫 로딩이 ~50초 걸릴 수 있습니다.
+> - 세션이 서버 메모리에 저장되어 서버가 재시작(잠들었다 깨어남/재배포)되면 네이버 로그인이 풀려 다시 연결해야 합니다. (일정·할 일 데이터는 브라우저에 있으므로 영향 없음)
+
+## 프로젝트 구조
+
+```
+public/index.html   프론트엔드 (단일 파일, 서버 없이도 동작)
+server.js           Express 서버 (정적 제공 + 네이버 OAuth/일정등록 프록시)
+package.json        의존성 (express, express-session)
+render.yaml         Render 배포 Blueprint
+.env.example        환경변수 예시
 ```
 
-The `/mcp` command lists configured servers and their connection status, and lets
-you (re)authenticate. Once approved, `github` should show as **connected**.
+## 데이터 저장
 
-## Verifying the connection
-
-Inside a Claude Code session run `/mcp` — the `github` server should be listed as
-connected. You can then ask Claude to, for example, "list open PRs" or "search
-issues mentioning X" and it will use the GitHub MCP tools.
-
-## Alternative: run the GitHub MCP server locally (Docker)
-
-If you prefer to run the server yourself instead of using the hosted endpoint,
-replace the `github` block in `.mcp.json` with:
-
-```json
-{
-  "mcpServers": {
-    "github": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN",
-        "ghcr.io/github/github-mcp-server"
-      ],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
-      }
-    }
-  }
-}
-```
-
-This requires Docker to be installed and running. The token is passed through
-the same `GITHUB_PERSONAL_ACCESS_TOKEN` environment variable.
-
-## Troubleshooting
-
-- **Server shows "failed" / "disconnected":** confirm `GITHUB_PERSONAL_ACCESS_TOKEN`
-  is exported in the shell that launched Claude Code (`echo $GITHUB_PERSONAL_ACCESS_TOKEN`).
-- **401 / 403 responses:** the token is missing scopes or has expired — regenerate it.
-- **Server not appearing at all:** make sure you launched Claude Code from this
-  directory so it picks up `.mcp.json`, and that you approved the project server
-  via `/mcp`.
-
-## Adding more servers
-
-Add entries under `mcpServers` in `.mcp.json`. See the
-[Claude Code MCP documentation](https://code.claude.com/docs/en/mcp) for the full
-configuration reference (stdio, HTTP, and SSE transports, env-var expansion, etc.).
+일정 데이터는 **브라우저 localStorage**에 저장됩니다. 다른 기기로 옮기려면 백업 내보내기(⬇️)/가져오기(⬆️)를 이용하세요.
+네이버 등록 기능은 별도로, 해당 일정을 네이버 캘린더에 복사해 넣는 동작입니다.

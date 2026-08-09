@@ -1,0 +1,1768 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#4f46e5" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="가족일정" />
+<meta name="mobile-web-app-capable" content="yes" />
+<title>우리 가족 일정표</title>
+<style>
+  :root {
+    --bg: #f4f5f8;
+    --panel: #ffffff;
+    --panel-2: #fafbfc;
+    --text: #1f2430;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --border-soft: #eef0f3;
+    --accent: #4f46e5;
+    --accent-soft: #eef2ff;
+    --today: #fff7ed;
+    --sun: #ef4444;
+    --sat: #3b82f6;
+    --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.05);
+    --radius: 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1015;
+      --panel: #161922;
+      --panel-2: #1b1f2a;
+      --text: #e7e9ee;
+      --muted: #9aa1ad;
+      --border: #272b36;
+      --border-soft: #21252f;
+      --accent: #818cf8;
+      --accent-soft: #1e2233;
+      --today: #2a2113;
+      --sun: #f87171;
+      --sat: #60a5fa;
+      --shadow: 0 1px 3px rgba(0,0,0,.5), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
+      "Malgun Gothic", "Noto Sans KR", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+  .app { max-width: 1280px; margin: 0 auto; padding: 16px; padding-bottom: 90px; }
+
+  header.top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  header.top h1 { font-size: 20px; margin: 0; display: flex; align-items: center; gap: 8px; }
+  .grow { flex: 1 1 auto; }
+
+  button, select, input, textarea { font: inherit; color: inherit; }
+  .btn {
+    border: 1px solid var(--border); background: var(--panel);
+    padding: 8px 12px; border-radius: 10px; cursor: pointer;
+    transition: background .15s, transform .05s, border-color .15s; white-space: nowrap;
+  }
+  .btn:hover { background: var(--accent-soft); }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--accent); color: #fff; border-color: transparent; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn.icon { padding: 8px 10px; }
+
+  .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .nav-title { font-size: 18px; font-weight: 700; min-width: 140px; text-align: center; }
+
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .seg button { border: 0; background: var(--panel); padding: 8px 14px; cursor: pointer; }
+  .seg button.active { background: var(--accent); color: #fff; }
+
+  /* Member chips */
+  .members { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 11px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--panel);
+    user-select: none; font-size: 14px;
+  }
+  .chip .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+  .chip.off { opacity: .35; }
+  .mini { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 2px; vertical-align: middle; }
+
+  /* Layout: calendar + day panel */
+  .main { display: grid; grid-template-columns: minmax(0,1fr) 350px; gap: 16px; align-items: start; }
+  @media (max-width: 940px) { .main { grid-template-columns: 1fr; } }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+
+  .dow { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--border); }
+  .dow div { padding: 9px 6px; text-align: center; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .dow div.sun { color: var(--sun); }
+  .dow div.sat { color: var(--sat); }
+
+  .grid-month { display: grid; grid-template-columns: repeat(7, 1fr); }
+  .cell {
+    min-height: 104px; border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft);
+    padding: 4px; cursor: pointer; position: relative; overflow: hidden;
+  }
+  .cell:nth-child(7n) { border-right: 0; }
+  .cell.out { background: var(--panel-2); }
+  .cell.today .num { background: var(--accent); color: #fff; }
+  .cell.sel { box-shadow: inset 0 0 0 2px var(--accent); }
+  .cell .num { font-size: 13px; font-weight: 600; margin: 2px; display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; border-radius: 50%; }
+  .cell .num.sun { color: var(--sun); }
+  .cell .num.sat { color: var(--sat); }
+  .cell.today .num.sun, .cell.today .num.sat { color: #fff; }
+
+  /* Event pill (month) */
+  .ev {
+    font-size: 11px; padding: 2px 6px 2px 8px; border-radius: 6px; margin-bottom: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+    border-left: 3px solid var(--evc); background: var(--evbg); color: var(--text);
+  }
+  .ev .t { color: var(--evc); font-weight: 700; margin-right: 4px; font-variant-numeric: tabular-nums; }
+  .more { font-size: 10px; color: var(--muted); padding: 1px 6px; }
+
+  /* Week view */
+  .grid-week { display: grid; grid-template-columns: repeat(7, 1fr); }
+  .wcol { border-right: 1px solid var(--border-soft); min-height: 320px; }
+  .wcol:last-child { border-right: 0; }
+  .wcol .whead { padding: 8px 6px; text-align: center; border-bottom: 1px solid var(--border-soft); cursor: pointer; }
+  .wcol.today .whead { background: var(--today); }
+  .wcol.sel .whead { box-shadow: inset 0 -3px 0 var(--accent); }
+  .wcol .whead .wd { font-size: 12px; color: var(--muted); }
+  .wcol .whead .dd { font-size: 18px; font-weight: 700; }
+  .wbody { padding: 6px; min-height: 260px; }
+  .wev {
+    font-size: 12px; padding: 5px 8px; border-radius: 8px; margin-bottom: 5px; cursor: pointer;
+    border-left: 3px solid var(--evc); background: var(--evbg); color: var(--text);
+  }
+  .wev .wt { font-size: 10px; color: var(--evc); font-weight: 700; }
+
+  /* Day panel */
+  .daypanel { position: sticky; top: 12px; }
+  .dp-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border-soft); }
+  .dp-head .dp-date { font-size: 16px; font-weight: 700; }
+  .dp-head .dp-badge { font-size: 11px; background: var(--accent); color: #fff; padding: 1px 8px; border-radius: 999px; }
+  .dp-allday { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--border-soft); }
+  .dp-allday:empty { display: none; }
+  .adchip { font-size: 11px; padding: 3px 8px; border-radius: 6px; border-left: 3px solid var(--evc); background: var(--evbg); color: var(--text); cursor: pointer; }
+
+  .dp-membar { display: grid; border-bottom: 1px solid var(--border-soft); }
+  .dp-membar .gutter { }
+  .dp-membar .mname { text-align: center; font-size: 12px; font-weight: 700; padding: 6px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dp-membar .mname .d { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+
+  .dgrid { position: relative; overflow: hidden; }
+  .hline { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border-soft); }
+  .hlabel { position: absolute; left: 0; width: 46px; text-align: right; padding-right: 6px; font-size: 10px; color: var(--muted); transform: translateY(-6px); font-variant-numeric: tabular-nums; }
+  .dcol { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--border-soft); cursor: pointer; }
+  .dcol:hover { background: var(--panel-2); }
+  .dev {
+    position: absolute; border-left: 3px solid var(--evc); background: var(--evbg); color: var(--text);
+    border-radius: 6px; padding: 2px 5px; font-size: 11px; overflow: hidden; cursor: pointer; z-index: 2;
+  }
+  .dev .devt { color: var(--evc); font-weight: 700; font-size: 10px; }
+  .dp-empty { padding: 22px 14px; color: var(--muted); font-size: 13px; text-align: center; }
+
+  /* To-do */
+  .todo { margin-top: 16px; }
+  .todo-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border-soft); }
+  .todo-head .th-title { font-weight: 700; }
+  .todo-add { display: flex; gap: 8px; padding: 12px 14px; }
+  .todo-add input { flex: 1; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+  .todo-list { padding: 0 14px 12px; }
+  .todo-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
+  .todo-item:last-child { border-bottom: 0; }
+  .todo-item input[type=checkbox] { width: 18px; height: 18px; flex: none; cursor: pointer; }
+  .todo-item .tx { flex: 1; }
+  .todo-item.done .tx { text-decoration: line-through; color: var(--muted); }
+  .todo-item .del { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 16px; }
+  .todo-empty { color: var(--muted); font-size: 13px; padding: 14px 0; text-align: center; }
+
+  /* List view */
+  .listwrap { padding: 14px; }
+  .search { display: flex; gap: 8px; margin-bottom: 12px; }
+  .search input { flex: 1; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+  .lrow { display: flex; align-items: center; gap: 12px; padding: 10px 6px; border-bottom: 1px solid var(--border-soft); cursor: pointer; border-radius: 8px; }
+  .lrow:hover { background: var(--panel-2); }
+  .lrow .ldate { width: 132px; flex: none; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .lrow .ldot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .lrow .ltitle { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lrow .ltime { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .lrow .lrep { font-size: 10px; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 7px; }
+  .list-empty { color: var(--muted); text-align: center; padding: 40px 0; }
+
+  /* Study planner */
+  .study-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border-soft); }
+  .study-head .sh-title { font-weight: 700; }
+  .study-head .sh-date { font-size: 13px; color: var(--muted); }
+  .study-kids { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 14px 0; }
+  .study-kids .chip.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .study-sec { padding: 12px 14px; border-top: 1px solid var(--border-soft); }
+  .sec-h { font-weight: 700; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .sec-sub { font-weight: 400; font-size: 12px; color: var(--muted); }
+  .saved { font-weight: 500; font-size: 12px; color: #16a34a; opacity: 0; transition: opacity .3s; }
+  .sec-textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); resize: vertical; min-height: 40px; }
+  .goal-row { margin-bottom: 8px; }
+  .goal-lb { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
+  .mind-emojis { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .emoji-btn { font-size: 18px; border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 2px 9px; cursor: pointer; line-height: 1.5; }
+  .emoji-btn:hover { background: var(--accent-soft); }
+  .study-add { display: flex; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+  .study-add input { padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); }
+  .study-add .st-subj { width: 90px; }
+  .study-add .st-cont { flex: 1; min-width: 160px; }
+  .study-add .st-min { width: 64px; }
+  .study-add2 { display: flex; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+  .study-add2 input { flex: 1 1 140px; min-width: 0; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); }
+  .study-add2 .st-amt { flex: 0 0 110px; width: 110px; }
+  .study-add2 .btn { flex: none; }
+  .st-item .st-amt-view { flex: none; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .study-list { padding: 0; }
+  .st-item { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border-soft); }
+  .st-item:last-child { border-bottom: 0; }
+  .st-item input[type=checkbox] { width: 18px; height: 18px; flex: none; cursor: pointer; }
+  .st-item .st-badge { font-size: 11px; font-weight: 700; color: #fff; padding: 2px 8px; border-radius: 999px; flex: none; }
+  .st-item .st-body { flex: 1; overflow: hidden; }
+  .st-item .st-body .stc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .st-item.done .st-body { text-decoration: line-through; color: var(--muted); }
+  .st-item .st-time { font-size: 12px; color: var(--muted); flex: none; font-variant-numeric: tabular-nums; }
+  .st-item .del { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 16px; }
+  .study-empty { color: var(--muted); text-align: center; padding: 22px 0; font-size: 13px; }
+  .study-foot { padding: 12px 14px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--border-soft); }
+  .study-foot:empty { display: none; }
+
+  /* Modal */
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: flex-end; justify-content: center; z-index: 50; }
+  .overlay.open { display: flex; }
+  .modal { background: var(--panel); width: 100%; max-width: 460px; border-radius: 18px 18px 0 0; padding: 18px; box-shadow: var(--shadow); animation: slideup .2s ease; max-height: 92vh; overflow-y: auto; }
+  @media (min-width: 560px) { .overlay { align-items: center; } .modal { border-radius: 18px; } }
+  @keyframes slideup { from { transform: translateY(16px); opacity: .6; } to { transform: none; opacity: 1; } }
+  .modal h2 { margin: 0 0 14px; font-size: 17px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
+  .field input[type=text], .field input[type=date], .field input[type=time], .field select, .field textarea {
+    width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
+  }
+  .field textarea { resize: vertical; min-height: 54px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .memberpick { display: flex; gap: 8px; flex-wrap: wrap; }
+  .memberpick .chip.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+  .allday { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .mic { margin-left: 8px; font-size: 12px; font-weight: 600; border: 1px solid var(--border); background: var(--panel); border-radius: 999px; padding: 2px 10px; cursor: pointer; color: var(--accent); }
+  .mic.rec { background: #ef4444; color: #fff; border-color: transparent; }
+  .mic-status { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 1em; }
+
+  /* Attachments */
+  .attach-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .attach-list:empty { display: none; }
+  .att { position: relative; display: flex; align-items: center; gap: 6px; max-width: 160px; border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px 4px 4px; background: var(--bg); cursor: pointer; font-size: 12px; }
+  .att img { width: 34px; height: 34px; object-fit: cover; border-radius: 5px; flex: none; }
+  .att .fic { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex: none; }
+  .att .an { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .att .ax { border: 0; background: rgba(0,0,0,.55); color: #fff; border-radius: 50%; width: 16px; height: 16px; font-size: 10px; line-height: 16px; padding: 0; position: absolute; top: -6px; right: -6px; cursor: pointer; }
+  .att-hint { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+  .fab { position: fixed; right: 20px; bottom: 20px; z-index: 40; width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--accent); color: #fff; font-size: 28px; cursor: pointer; box-shadow: 0 6px 20px rgba(79,70,229,.45); line-height: 1; }
+  .hidden { display: none !important; }
+  .foot { text-align: center; color: var(--muted); font-size: 12px; margin-top: 16px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>📅 우리 가족 일정표</h1>
+    <span class="grow"></span>
+    <span id="syncBadge" title="실시간 동기화 켜짐" style="display:none;font-size:18px;align-self:center">☁️</span>
+    <button class="btn" id="btnNaver" title="네이버 캘린더 연결" style="display:none"></button>
+    <button class="btn icon" id="btnExport" title="백업 내보내기">⬇️</button>
+    <button class="btn icon" id="btnImport" title="백업 가져오기">⬆️</button>
+    <button class="btn icon" id="btnMembers" title="가족 관리">👨‍👩‍👧‍👦</button>
+  </header>
+
+  <div class="members" id="memberChips"></div>
+
+  <div class="toolbar">
+    <button class="btn" id="btnPrev">‹</button>
+    <button class="btn" id="btnToday">오늘</button>
+    <button class="btn" id="btnNext">›</button>
+    <span class="nav-title" id="navTitle"></span>
+    <span class="grow"></span>
+    <div class="seg">
+      <button id="segWeek">주간</button>
+      <button id="segMonth" class="active">월간</button>
+      <button id="segList">목록</button>
+      <button id="segStudy">스터디</button>
+    </div>
+  </div>
+
+  <!-- Calendar + Day panel -->
+  <div class="main" id="mainView">
+    <div class="card">
+      <div class="dow" id="dowRow"></div>
+      <div id="calBody"></div>
+    </div>
+    <div class="card daypanel" id="dayPanel"></div>
+  </div>
+
+  <!-- List view -->
+  <div class="card listwrap hidden" id="listView">
+    <div class="search">
+      <input type="text" id="searchInput" placeholder="일정 검색 (제목·메모·구성원)" autocomplete="off" />
+      <button class="btn" id="searchClear">지우기</button>
+    </div>
+    <div id="listBody"></div>
+  </div>
+
+  <!-- Study planner -->
+  <div class="card studywrap hidden" id="studyView">
+    <div class="study-head">
+      <span class="sh-title">📚 스터디플래너</span>
+      <span class="grow"></span>
+      <span class="sh-date" id="studyDate"></span>
+    </div>
+    <div class="study-kids" id="studyKids"></div>
+
+    <div class="study-sec">
+      <div class="sec-h">🎯 나의 목표 <span class="saved" id="goalSaved"></span></div>
+      <div class="goal-row">
+        <label class="goal-lb" id="goalWeekLb">이번 주</label>
+        <textarea id="stGoalWeek" class="sec-textarea" placeholder="예: 영어 단어 100개 외우기"></textarea>
+      </div>
+      <div class="goal-row">
+        <label class="goal-lb" id="goalMonthLb">이번 달</label>
+        <textarea id="stGoalMonth" class="sec-textarea" placeholder="예: 수학 문제집 한 권 끝내기"></textarea>
+      </div>
+    </div>
+
+    <div class="study-sec">
+      <div class="sec-h">💭 나의 오늘의 마음가짐 <span class="saved" id="mindSaved"></span></div>
+      <textarea id="stMind" class="sec-textarea" placeholder="예: 오늘은 집중해서 30분씩 공부하자!"></textarea>
+      <div class="mind-emojis" id="mindEmojis"></div>
+    </div>
+
+    <div class="study-sec">
+      <div class="sec-h">📚 오늘의 학습계획 <span class="sec-sub" id="studyFoot"></span></div>
+      <div class="study-add">
+        <input id="stSubject" class="st-subj" placeholder="과목" autocomplete="off" />
+        <input id="stContent" class="st-cont" placeholder="학습 내용/분량 (예: 수학 32~40p)" autocomplete="off" />
+        <input id="stMin" class="st-min" type="number" min="0" placeholder="분" />
+        <button class="btn primary" id="stAdd">추가</button>
+      </div>
+      <div class="study-list" id="studyList"></div>
+    </div>
+
+    <div class="study-sec">
+      <div class="sec-h">✅ 해야 할 일 <span class="sec-sub" id="taskFoot"></span></div>
+      <div class="study-add2">
+        <input id="stTaskInput" placeholder="해야 할 일 (예: 알림장 확인, 준비물 챙기기)" autocomplete="off" />
+        <button class="btn primary" id="stTaskAdd">추가</button>
+      </div>
+      <div class="study-list" id="taskList"></div>
+    </div>
+
+    <div class="study-sec">
+      <div class="sec-h">💰 오늘의 소비 <span class="sec-sub" id="spendFoot"></span></div>
+      <div class="study-add2">
+        <input id="stSpendItem" placeholder="쓴 곳 (예: 문구점)" autocomplete="off" />
+        <input id="stSpendAmt" class="st-amt" type="number" min="0" inputmode="numeric" placeholder="금액(원)" />
+        <button class="btn primary" id="stSpendAdd">추가</button>
+      </div>
+      <div class="study-list" id="spendList"></div>
+    </div>
+
+    <div class="study-sec">
+      <div class="sec-h">🙏 감사일기 <span class="saved" id="thanksSaved"></span></div>
+      <textarea id="stThanks" class="sec-textarea" placeholder="오늘 감사한 일을 적어보세요 (예: 엄마가 맛있는 저녁을 해주셨다)"></textarea>
+    </div>
+  </div>
+
+  <!-- To-do -->
+  <div class="card todo" id="todoCard">
+    <div class="todo-head">
+      <span class="th-title" id="todoTitle">오늘의 할 일</span>
+      <span class="grow"></span>
+      <span id="todoCount" style="font-size:12px;color:var(--muted)"></span>
+    </div>
+    <div class="todo-add">
+      <input type="text" id="todoInput" placeholder="할 일 추가 (예: 준비물 챙기기)" autocomplete="off" />
+      <button class="btn primary" id="todoAdd">추가</button>
+    </div>
+    <div class="todo-list" id="todoList"></div>
+  </div>
+
+  <div class="foot">데이터는 이 브라우저에 저장됩니다. 기기 간 이동은 ⬇️ 백업 → ⬆️ 가져오기를 이용하세요.</div>
+</div>
+
+<button class="fab" id="fab" title="일정 추가">＋</button>
+
+<!-- Event modal -->
+<div class="overlay" id="evOverlay">
+  <div class="modal">
+    <h2 id="evModalTitle">일정 추가</h2>
+    <div class="field">
+      <label>제목 <button type="button" id="micBtn" class="mic" title="음성으로 입력">🎤 말로 입력</button></label>
+      <input type="text" id="fTitle" placeholder="예: 윤호 태권도" autocomplete="off" />
+      <div id="micStatus" class="mic-status"></div>
+    </div>
+    <div class="field">
+      <label>가족 구성원</label>
+      <div class="memberpick" id="fMembers"></div>
+    </div>
+    <div class="field">
+      <label class="allday"><input type="checkbox" id="fAllday" /> 하루 종일</label>
+    </div>
+    <div class="field">
+      <label id="fDateLabel">날짜</label>
+      <input type="date" id="fDate" />
+    </div>
+    <div class="row2" id="timeRow">
+      <div class="field">
+        <label>시작 시간</label>
+        <input type="time" id="fTime" />
+      </div>
+      <div class="field">
+        <label>종료 시간</label>
+        <input type="time" id="fEndTime" />
+      </div>
+    </div>
+    <div class="field" id="endWrap" style="display:none">
+      <label>종료일</label>
+      <input type="date" id="fEndDate" />
+    </div>
+    <div class="field">
+      <label>반복</label>
+      <select id="fRepeat">
+        <option value="none">반복 안 함</option>
+        <option value="daily">매일</option>
+        <option value="weekly">매주</option>
+        <option value="biweekly">격주</option>
+        <option value="monthly">매월</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>메모</label>
+      <textarea id="fNote" placeholder="장소, 준비물 등"></textarea>
+    </div>
+    <div class="field" id="attField">
+      <label>첨부 (사진·파일)</label>
+      <div class="attach-list" id="fAttach"></div>
+      <button type="button" class="btn" id="attAddBtn">＋ 사진/파일 추가</button>
+      <input type="file" id="attInput" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.hwp" multiple class="hidden" />
+      <div class="att-hint">사진은 자동 압축됩니다. 첨부는 이 브라우저에 저장되며 백업에 포함됩니다. (파일당 15MB)</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="evDelete" style="color:#ef4444">삭제</button>
+      <button class="btn" id="evNaver" title="이 일정을 네이버 캘린더에 등록" style="display:none">📅 네이버 등록</button>
+      <span class="grow"></span>
+      <button class="btn" id="evCancel">취소</button>
+      <button class="btn primary" id="evSave">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- Members modal -->
+<div class="overlay" id="memOverlay">
+  <div class="modal">
+    <h2>가족 구성원 관리</h2>
+    <div id="memList"></div>
+    <div class="row2" style="margin-top:12px">
+      <div class="field" style="margin:0">
+        <label>이름 추가</label>
+        <input type="text" id="memName" placeholder="예: 막내" autocomplete="off" />
+      </div>
+      <div class="field" style="margin:0">
+        <label>색상</label>
+        <input type="color" id="memColor" value="#059669" style="width:100%;height:42px;padding:2px;border:1px solid var(--border);border-radius:10px;background:var(--bg)" />
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="memAdd">＋ 추가</button>
+      <span class="grow"></span>
+      <button class="btn primary" id="memClose">닫기</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="importFile" accept="application/json" class="hidden" />
+
+<script>
+(function () {
+  "use strict";
+
+  var STORE_KEY = "family_schedule_v2";
+  var DOW = ["일", "월", "화", "수", "목", "금", "토"];
+  var PALETTE = ["#2563eb","#db2777","#059669","#7c3aed","#d97706","#0891b2","#dc2626","#4f46e5"];
+  var HOUR_H = 44; // px per hour in day panel
+
+  var state = load();
+  var view = "month";                 // "month" | "week" | "list"
+  var cursor = startOfDay(new Date());
+  var selectedDay = startOfDay(new Date());
+  var activeFilter = null;             // Set of visible member ids; null = all
+  var editingId = null;
+  var searchQuery = "";
+  var selectedStudyChild = null;  // 스터디 탭에서 선택된 구성원
+  var modalAttachments = [];   // attachments currently shown in the open modal
+  var modalRemovedAtt = [];    // ids of existing attachments to delete on save
+  var IDB_OK = (typeof indexedDB !== "undefined");
+
+  function defaultState() {
+    return {
+      members: [
+        { id: uid(), name: "아빠", color: "#2563eb" },
+        { id: uid(), name: "엄마", color: "#db2777" },
+        { id: uid(), name: "윤호", color: "#059669" },
+        { id: uid(), name: "윤아", color: "#7c3aed" }
+      ],
+      events: [],
+      todos: [],
+      study: [],           // 오늘의 학습계획 (구성원+날짜별)
+      studyTasks: [],      // 해야 할 일 (구성원+날짜별)
+      studyGoals: {},      // (구버전 호환용, 미사용)
+      studyGoalsWeek: {},  // 주간 목표 (구성원|주시작일)
+      studyGoalsMonth: {}, // 월간 목표 (구성원|YYYY-MM)
+      studyMind: {},       // 오늘의 마음가짐 (구성원|날짜별)
+      studySpend: [],      // 오늘의 소비 (구성원+날짜별)
+      studyThanks: {}      // 감사일기 (구성원|날짜별)
+    };
+  }
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return defaultState();
+      var d = JSON.parse(raw);
+      if (!d.members || !d.events) return defaultState();
+      if (!d.todos) d.todos = [];
+      if (!d.study) d.study = [];
+      if (!d.studyTasks) d.studyTasks = [];
+      if (!d.studyGoals) d.studyGoals = {};
+      if (!d.studyGoalsWeek) d.studyGoalsWeek = {};
+      if (!d.studyGoalsMonth) d.studyGoalsMonth = {};
+      if (!d.studyMind) d.studyMind = {};
+      if (!d.studySpend) d.studySpend = [];
+      if (!d.studyThanks) d.studyThanks = {};
+      // 구버전(단일 memberId) → 다중 memberIds 마이그레이션
+      d.events.forEach(function(ev){
+        if (!ev.memberIds) ev.memberIds = ev.memberId ? [ev.memberId] : [];
+      });
+      return d;
+    } catch (e) { return defaultState(); }
+  }
+  function rawSave() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+  function save() { rawSave(); scheduleSync(); }
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  // 실시간 동기화 상태
+  var syncEnabled = false, syncRef = null, attRef = null, applyingRemote = false, pushTimer = null, lastApplied = 0;
+  var deviceId = localStorage.getItem("fs_device") || (Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+  localStorage.setItem("fs_device", deviceId);
+
+  // Date helpers
+  function startOfDay(d) { var x = new Date(d); x.setHours(0,0,0,0); return x; }
+  function pad(n) { return n < 10 ? "0"+n : ""+n; }
+  function ymd(d) { return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate()); }
+  function parseYmd(s) { var p = s.split("-"); return new Date(+p[0], +p[1]-1, +p[2]); }
+  function addDays(d, n) { var x = new Date(d); x.setDate(x.getDate()+n); return x; }
+  function sameDay(a, b) { return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+  function startOfWeek(d) { return addDays(d, -d.getDay()); }
+  function dayLabel(d) { return (d.getMonth()+1) + "월 " + d.getDate() + "일 (" + DOW[d.getDay()] + ")"; }
+
+  // Color helpers
+  function hexToRgba(hex, a) {
+    hex = String(hex).replace("#","");
+    if (hex.length === 3) hex = hex.split("").map(function(c){return c+c;}).join("");
+    var n = parseInt(hex, 16);
+    return "rgba(" + ((n>>16)&255) + "," + ((n>>8)&255) + "," + (n&255) + "," + a + ")";
+  }
+  function memberById(id) {
+    for (var i=0;i<state.members.length;i++) if (state.members[i].id===id) return state.members[i];
+    return null;
+  }
+  function memberName(id) { var m = memberById(id); return m ? m.name : "?"; }
+  function eventMembers(ev) {
+    var ids = ev.memberIds || (ev.memberId ? [ev.memberId] : []);
+    // state.members 순서대로 정렬해 일관된 표시
+    return state.members.filter(function(m){ return ids.indexOf(m.id) >= 0; });
+  }
+  function eventMemberNames(ev) {
+    var ms = eventMembers(ev);
+    return ms.length ? ms.map(function(m){ return m.name; }).join("·") : "?";
+  }
+  function eventColor(ev) { var ms = eventMembers(ev); return ms.length ? ms[0].color : "#6b7280"; }
+  function memberVisible(id) { return !activeFilter || activeFilter.has(id); }
+  function eventVisible(ev) {
+    var ids = ev.memberIds || (ev.memberId ? [ev.memberId] : []);
+    return !activeFilter || ids.some(function(id){ return activeFilter.has(id); });
+  }
+  function evVarsColor(c) { return "--evc:" + c + ";--evbg:" + hexToRgba(c, 0.14) + ";"; }
+  function evVars(ev) { return evVarsColor(eventColor(ev)); }
+  function memberDotsHtml(ev) {
+    return eventMembers(ev).map(function(m){ return '<span class="mini" style="background:'+m.color+'"></span>'; }).join("");
+  }
+
+  // Recurrence
+  function daysBetween(a, b){ return Math.round((startOfDay(b) - startOfDay(a)) / 864e5); }
+  function occursOn(ev, d) {
+    var start = startOfDay(parseYmd(ev.date));
+    var dd = startOfDay(d);
+    if (dd < start) return false;
+    // 종일 일정의 기간(일수). 종료일이 시작일보다 뒤면 그만큼 여러 날에 걸침.
+    var span = 0;
+    if (ev.allday && ev.endDate) { var sp = daysBetween(start, startOfDay(parseYmd(ev.endDate))); if (sp > 0) span = sp; }
+    function within(inst){ return dd >= inst && dd <= addDays(inst, span); }
+    switch (ev.repeat) {
+      case "daily": return true;
+      case "weekly": {
+        var k = Math.floor(daysBetween(start, dd) / 7);
+        return within(addDays(start, k*7)) || within(addDays(start, (k-1)*7));
+      }
+      case "biweekly": {
+        var k2 = Math.floor(daysBetween(start, dd) / 7); k2 -= (k2 % 2);
+        return within(addDays(start, k2*7)) || within(addDays(start, (k2-2)*7));
+      }
+      case "monthly": {
+        var c1 = new Date(dd.getFullYear(), dd.getMonth(), start.getDate());
+        var c2 = new Date(dd.getFullYear(), dd.getMonth()-1, start.getDate());
+        if (c1.getDate()===start.getDate() && within(startOfDay(c1))) return true;
+        if (c2.getDate()===start.getDate() && within(startOfDay(c2))) return true;
+        return false;
+      }
+      default: return within(start);
+    }
+  }
+  function eventsOn(d) {
+    var list = [];
+    for (var i=0;i<state.events.length;i++) {
+      var ev = state.events[i];
+      if (!eventVisible(ev)) continue;
+      if (occursOn(ev, d)) list.push(ev);
+    }
+    list.sort(function(a,b){
+      if (a.allday && !b.allday) return -1;
+      if (!a.allday && b.allday) return 1;
+      return (a.time||"").localeCompare(b.time||"");
+    });
+    return list;
+  }
+
+  var el = function(id){ return document.getElementById(id); };
+  function repeatLabel(r){ return {daily:"매일",weekly:"매주",biweekly:"격주",monthly:"매월"}[r] || ""; }
+
+  // ---------- Members ----------
+  function renderMembers() {
+    var wrap = el("memberChips");
+    wrap.innerHTML = "";
+    state.members.forEach(function(m){
+      var c = document.createElement("div");
+      c.className = "chip" + (memberVisible(m.id) ? "" : " off");
+      c.innerHTML = '<span class="dot" style="background:'+m.color+'"></span>'+escapeHtml(m.name);
+      c.onclick = function(){ toggleFilter(m.id); };
+      wrap.appendChild(c);
+    });
+  }
+  function toggleFilter(id) {
+    if (!activeFilter) activeFilter = new Set(state.members.map(function(m){return m.id;}));
+    if (activeFilter.has(id)) activeFilter.delete(id); else activeFilter.add(id);
+    if (activeFilter.size === state.members.length) activeFilter = null;
+    renderMembers(); render();
+  }
+
+  function renderDow() {
+    var row = el("dowRow"); row.innerHTML = "";
+    for (var i=0;i<7;i++){
+      var d = document.createElement("div");
+      d.textContent = DOW[i];
+      if (i===0) d.className = "sun"; if (i===6) d.className = "sat";
+      row.appendChild(d);
+    }
+  }
+
+  // ---------- Render dispatch ----------
+  function render() {
+    var isCal = view === "month" || view === "week";
+    var isList = view === "list";
+    var isStudy = view === "study";
+    el("mainView").classList.toggle("hidden", !isCal);
+    el("listView").classList.toggle("hidden", !isList);
+    el("studyView").classList.toggle("hidden", !isStudy);
+    el("todoCard").classList.toggle("hidden", !isCal);
+    var showNav = isCal || isStudy;  // 목록만 날짜 이동 숨김
+    el("btnPrev").style.visibility = showNav ? "" : "hidden";
+    el("btnNext").style.visibility = showNav ? "" : "hidden";
+    el("btnToday").style.visibility = showNav ? "" : "hidden";
+
+    if (view === "month") renderMonth();
+    else if (view === "week") renderWeek();
+    else if (view === "list") renderList();
+    else renderStudy();
+
+    if (isCal) { renderDayPanel(); renderTodos(); }
+    updateNavTitle(); updateSeg();
+  }
+  function updateSeg() {
+    el("segMonth").classList.toggle("active", view==="month");
+    el("segWeek").classList.toggle("active", view==="week");
+    el("segList").classList.toggle("active", view==="list");
+    el("segStudy").classList.toggle("active", view==="study");
+  }
+  function updateNavTitle() {
+    if (view === "month") el("navTitle").textContent = cursor.getFullYear()+"년 "+(cursor.getMonth()+1)+"월";
+    else if (view === "week") { var s=startOfWeek(cursor), e=addDays(s,6); el("navTitle").textContent=(s.getMonth()+1)+"/"+s.getDate()+" – "+(e.getMonth()+1)+"/"+e.getDate(); }
+    else if (view === "study") el("navTitle").textContent = dayLabel(selectedDay);
+    else el("navTitle").textContent = "전체 일정";
+  }
+
+  function selectDay(d) { selectedDay = startOfDay(d); renderDayPanel(); renderTodos(); markSelected(); }
+  function markSelected() {
+    document.querySelectorAll(".cell.sel").forEach(function(n){ n.classList.remove("sel"); });
+    document.querySelectorAll(".wcol.sel").forEach(function(n){ n.classList.remove("sel"); });
+    if (view === "month") {
+      var cells = document.querySelectorAll("#calBody .cell");
+      cells.forEach(function(c){ if (c._day && sameDay(c._day, selectedDay)) c.classList.add("sel"); });
+    } else if (view === "week") {
+      document.querySelectorAll("#calBody .wcol").forEach(function(c){ if (c._day && sameDay(c._day, selectedDay)) c.classList.add("sel"); });
+    }
+  }
+
+  // ---------- Month ----------
+  function renderMonth() {
+    var body = el("calBody"); body.innerHTML = "";
+    var grid = document.createElement("div"); grid.className = "grid-month";
+    var first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    var gridStart = startOfWeek(first);
+    var today = startOfDay(new Date());
+    var MAX = 3;
+
+    for (var i=0;i<42;i++){
+      var day = addDays(gridStart, i);
+      var cell = document.createElement("div");
+      cell.className = "cell";
+      cell._day = day;
+      if (day.getMonth() !== cursor.getMonth()) cell.className += " out";
+      if (sameDay(day, today)) cell.className += " today";
+      if (sameDay(day, selectedDay)) cell.className += " sel";
+
+      var dow = day.getDay();
+      var num = document.createElement("span");
+      num.className = "num" + (dow===0?" sun":dow===6?" sat":"");
+      num.textContent = day.getDate();
+      cell.appendChild(num);
+
+      var evs = eventsOn(day);
+      for (var j=0;j<Math.min(evs.length, MAX);j++) cell.appendChild(monthEventEl(evs[j]));
+      if (evs.length > MAX) {
+        var more = document.createElement("div"); more.className = "more";
+        more.textContent = "+" + (evs.length - MAX);
+        cell.appendChild(more);
+      }
+      (function(dcopy){
+        cell.onclick = function(e){ if (e.target.classList.contains("ev")) return; selectDay(dcopy); };
+        cell.ondblclick = function(e){ if (e.target.classList.contains("ev")) return; openNew(dcopy); };
+      })(day);
+      grid.appendChild(cell);
+    }
+    body.appendChild(grid);
+    body.querySelectorAll(".ev").forEach(function(n){
+      n.onclick = function(e){ e.stopPropagation(); openEdit(n.dataset.id); };
+    });
+  }
+  function monthEventEl(ev) {
+    var d = document.createElement("div");
+    d.className = "ev"; d.dataset.id = ev.id; d.setAttribute("style", evVars(ev));
+    var time = ev.allday ? "" : '<span class="t">'+ (ev.time||"") +'</span>';
+    var clip = (ev.attachments && ev.attachments.length) ? "📎" : "";
+    var dots = eventMembers(ev).length > 1 ? memberDotsHtml(ev) : "";
+    d.innerHTML = time + dots + escapeHtml(ev.title) + clip;
+    return d;
+  }
+
+  // ---------- Week ----------
+  function renderWeek() {
+    var body = el("calBody"); body.innerHTML = "";
+    var grid = document.createElement("div"); grid.className = "grid-week";
+    var s = startOfWeek(cursor);
+    var today = startOfDay(new Date());
+    for (var i=0;i<7;i++){
+      var day = addDays(s, i);
+      var col = document.createElement("div");
+      col.className = "wcol" + (sameDay(day,today)?" today":"") + (sameDay(day,selectedDay)?" sel":"");
+      col._day = day;
+      var head = document.createElement("div"); head.className = "whead";
+      var wdCls = i===0?"sun":i===6?"sat":"";
+      head.innerHTML = '<div class="wd '+wdCls+'">'+DOW[i]+'</div><div class="dd">'+day.getDate()+'</div>';
+      (function(dcopy){ head.onclick = function(){ selectDay(dcopy); }; })(day);
+      col.appendChild(head);
+
+      var wbody = document.createElement("div"); wbody.className = "wbody";
+      (function(dcopy){ wbody.onclick = function(e){ if (e.target===wbody) selectDay(dcopy); }; })(day);
+      eventsOn(day).forEach(function(ev){
+        var e = document.createElement("div");
+        e.className = "wev"; e.setAttribute("style", evVars(ev));
+        var t = ev.allday ? "종일" : (ev.time || "");
+        e.innerHTML = '<span class="wt">'+t+' · '+escapeHtml(eventMemberNames(ev))+'</span><div>'+escapeHtml(ev.title)+'</div>';
+        e.onclick = function(){ openEdit(ev.id); };
+        wbody.appendChild(e);
+      });
+      col.appendChild(wbody);
+      grid.appendChild(col);
+    }
+    body.appendChild(grid);
+  }
+
+  // ---------- Day panel (time axis x member columns) ----------
+  function renderDayPanel() {
+    var panel = el("dayPanel"); panel.innerHTML = "";
+    var mem = state.members.filter(function(m){ return memberVisible(m.id); });
+    if (!mem.length) mem = state.members;
+
+    // header
+    var head = document.createElement("div"); head.className = "dp-head";
+    var isToday = sameDay(selectedDay, startOfDay(new Date()));
+    head.innerHTML = '<span class="dp-date">'+dayLabel(selectedDay)+'</span>' + (isToday?'<span class="dp-badge">오늘</span>':'');
+    var addBtn = document.createElement("button"); addBtn.className = "btn"; addBtn.style.marginLeft="auto"; addBtn.textContent = "＋ 추가";
+    addBtn.onclick = function(){ openNew(selectedDay); };
+    head.appendChild(addBtn);
+    panel.appendChild(head);
+
+    var all = eventsOn(selectedDay);
+    var allday = all.filter(function(e){ return e.allday; });
+    var timed = all.filter(function(e){ return !e.allday; });
+
+    // allday strip
+    if (allday.length) {
+      var strip = document.createElement("div"); strip.className = "dp-allday";
+      allday.forEach(function(ev){
+        var c = document.createElement("div"); c.className="adchip"; c.setAttribute("style", evVars(ev));
+        c.textContent = eventMemberNames(ev)+" · "+ev.title;
+        c.onclick = function(){ openEdit(ev.id); };
+        strip.appendChild(c);
+      });
+      panel.appendChild(strip);
+    }
+
+    // member name bar
+    var gutterW = 48;
+    var colsTemplate = gutterW + "px repeat(" + mem.length + ", 1fr)";
+    var bar = document.createElement("div"); bar.className = "dp-membar"; bar.style.gridTemplateColumns = colsTemplate;
+    var g0 = document.createElement("div"); g0.className = "gutter"; bar.appendChild(g0);
+    mem.forEach(function(m){
+      var n = document.createElement("div"); n.className = "mname";
+      n.innerHTML = '<span class="d" style="background:'+m.color+'"></span>'+escapeHtml(m.name);
+      bar.appendChild(n);
+    });
+    panel.appendChild(bar);
+
+    // determine hour range
+    var rangeStart = 7, rangeEnd = 22;
+    timed.forEach(function(ev){
+      var h = parseInt((ev.time||"09:00").split(":")[0], 10);
+      if (h < rangeStart) rangeStart = h;
+      var endHr = h + 1;
+      if (ev.endTime) { var ep = ev.endTime.split(":"); endHr = (+ep[0]) + ((+ep[1] > 0) ? 1 : 0); }
+      if (endHr > rangeEnd) rangeEnd = endHr;
+    });
+    rangeStart = Math.max(0, rangeStart); rangeEnd = Math.min(24, rangeEnd);
+    if (rangeEnd <= rangeStart) rangeEnd = rangeStart + 1;
+    var hours = rangeEnd - rangeStart;
+
+    var grid = document.createElement("div"); grid.className = "dgrid";
+    grid.style.height = (hours * HOUR_H) + "px";
+
+    // hour lines + labels
+    for (var h = rangeStart; h <= rangeEnd; h++) {
+      var top = (h - rangeStart) * HOUR_H;
+      var line = document.createElement("div"); line.className = "hline"; line.style.top = top + "px"; line.style.left = gutterW + "px";
+      grid.appendChild(line);
+      if (h < rangeEnd) {
+        var lab = document.createElement("div"); lab.className = "hlabel"; lab.style.top = top + "px"; lab.textContent = pad(h) + ":00";
+        grid.appendChild(lab);
+      }
+    }
+
+    // member columns (background + click to add) and events
+    mem.forEach(function(m, idx){
+      var leftExpr = "calc(" + gutterW + "px + " + idx + " * (100% - " + gutterW + "px) / " + mem.length + ")";
+      var widthExpr = "calc((100% - " + gutterW + "px) / " + mem.length + ")";
+
+      var colBg = document.createElement("div"); colBg.className = "dcol";
+      colBg.style.left = leftExpr; colBg.style.width = widthExpr;
+      (function(mm){
+        colBg.onclick = function(e){
+          var rect = colBg.getBoundingClientRect();
+          var oy = e.clientY - rect.top;
+          var hr = rangeStart + oy / HOUR_H;
+          var hh = Math.floor(hr); var mm2 = (hr - hh) >= 0.5 ? 30 : 0;
+          if (hh < 0) hh = 0; if (hh > 23) hh = 23;
+          openNew(selectedDay, mm.id, pad(hh)+":"+pad(mm2));
+        };
+      })(m);
+      grid.appendChild(colBg);
+
+      timed.filter(function(ev){ return (ev.memberIds || []).indexOf(m.id) >= 0; }).forEach(function(ev){
+        var parts = (ev.time||"09:00").split(":");
+        var startH = (+parts[0]) + (+parts[1])/60;
+        var endH = startH + 1;
+        if (ev.endTime) { var eparts = ev.endTime.split(":"); var eh = (+eparts[0]) + (+eparts[1])/60; if (eh > startH) endH = eh; }
+        var top = (startH - rangeStart) * HOUR_H;
+        var height = Math.max(18, (endH - startH) * HOUR_H - 3);
+        var timeLabel = (ev.time||"") + (ev.endTime ? "~" + ev.endTime : "");
+        var e = document.createElement("div");
+        // 이 열(구성원 m)의 색으로 표시
+        e.className = "dev"; e.setAttribute("style", evVarsColor(m.color) + "left:" + leftExpr + ";width:" + widthExpr + ";top:" + top + "px;height:" + height + "px;");
+        e.innerHTML = '<div class="devt">'+timeLabel+'</div>'+escapeHtml(ev.title);
+        e.onclick = function(ev2){ ev2.stopPropagation(); openEdit(ev.id); };
+        grid.appendChild(e);
+      });
+    });
+
+    panel.appendChild(grid);
+    if (!all.length) {
+      var empty = document.createElement("div"); empty.className = "dp-empty";
+      empty.textContent = "이 날 일정이 없습니다. 시간대를 눌러 추가하세요.";
+      panel.appendChild(empty);
+    }
+  }
+
+  // ---------- To-do ----------
+  function todosFor(d) {
+    var key = ymd(d);
+    return state.todos.filter(function(t){ return t.date === key; });
+  }
+  function renderTodos() {
+    var isToday = sameDay(selectedDay, startOfDay(new Date()));
+    el("todoTitle").textContent = (isToday ? "오늘의 할 일" : dayLabel(selectedDay) + " 할 일");
+    var list = el("todoList"); list.innerHTML = "";
+    var items = todosFor(selectedDay);
+    var done = items.filter(function(t){ return t.done; }).length;
+    el("todoCount").textContent = items.length ? (done + "/" + items.length + " 완료") : "";
+    if (!items.length) {
+      var e = document.createElement("div"); e.className = "todo-empty"; e.textContent = "할 일이 없습니다.";
+      list.appendChild(e); return;
+    }
+    items.forEach(function(t){
+      var row = document.createElement("div"); row.className = "todo-item" + (t.done?" done":"");
+      var cb = document.createElement("input"); cb.type="checkbox"; cb.checked=!!t.done;
+      cb.onchange = function(){ t.done = cb.checked; save(); renderTodos(); };
+      var tx = document.createElement("span"); tx.className="tx"; tx.textContent = t.text;
+      var del = document.createElement("button"); del.className="del"; del.textContent="✕";
+      del.onclick = function(){ state.todos = state.todos.filter(function(x){ return x.id!==t.id; }); save(); renderTodos(); };
+      row.appendChild(cb); row.appendChild(tx); row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+  function addTodo() {
+    var v = el("todoInput").value.trim();
+    if (!v) { el("todoInput").focus(); return; }
+    state.todos.push({ id: uid(), text: v, date: ymd(selectedDay), done: false });
+    el("todoInput").value = ""; save(); renderTodos();
+  }
+
+  // ---------- Study planner ----------
+  function defaultStudyChild() {
+    var kids = state.members.filter(function(m){ return m.name === "윤호" || m.name === "윤아"; });
+    var pool = kids.length ? kids : state.members;
+    return pool[0] ? pool[0].id : null;
+  }
+  function renderStudyKids() {
+    var wrap = el("studyKids"); wrap.innerHTML = "";
+    state.members.forEach(function(m){
+      var c = document.createElement("div");
+      c.className = "chip" + (m.id === selectedStudyChild ? " sel" : "");
+      c.innerHTML = '<span class="dot" style="background:'+m.color+'"></span>'+escapeHtml(m.name);
+      c.onclick = function(){ selectedStudyChild = m.id; renderStudy(); };
+      wrap.appendChild(c);
+    });
+  }
+  function studyMindKey() { return selectedStudyChild + "|" + ymd(selectedDay); }
+  function studyWeekKey() { return selectedStudyChild + "|" + ymd(startOfWeek(selectedDay)); }
+  function studyMonthKey() { return selectedStudyChild + "|" + selectedDay.getFullYear() + "-" + pad(selectedDay.getMonth()+1); }
+  function renderStudy() {
+    if (!selectedStudyChild || !memberById(selectedStudyChild)) selectedStudyChild = defaultStudyChild();
+    renderStudyKids();
+    var isToday = sameDay(selectedDay, startOfDay(new Date()));
+    el("studyDate").textContent = dayLabel(selectedDay) + (isToday ? " · 오늘" : "");
+    // 목표: 주간/월간 (선택한 날짜가 속한 주·달 기준)
+    var ws = startOfWeek(selectedDay), we = addDays(ws, 6);
+    el("goalWeekLb").textContent = "이번 주 (" + (ws.getMonth()+1) + "/" + ws.getDate() + "~" + (we.getMonth()+1) + "/" + we.getDate() + ")";
+    el("goalMonthLb").textContent = "이번 달 (" + (selectedDay.getMonth()+1) + "월)";
+    el("stGoalWeek").value = state.studyGoalsWeek[studyWeekKey()] || "";
+    el("stGoalMonth").value = state.studyGoalsMonth[studyMonthKey()] || "";
+    el("stMind").value = (state.studyMind && state.studyMind[studyMindKey()]) || "";
+    el("stThanks").value = (state.studyThanks && state.studyThanks[studyMindKey()]) || "";
+    renderStudyPlan();
+    renderStudyTasks();
+    renderStudySpend();
+  }
+  function wonFmt(n){ return (n || 0).toLocaleString("ko-KR"); }
+  function renderStudySpend() {
+    var key = ymd(selectedDay);
+    var items = state.studySpend.filter(function(s){ return s.memberId === selectedStudyChild && s.date === key; });
+    var list = el("spendList"); list.innerHTML = "";
+    if (!items.length) { var e = document.createElement("div"); e.className = "study-empty"; e.textContent = "소비 내역이 없어요."; list.appendChild(e); }
+    var total = 0;
+    items.forEach(function(s){
+      total += (parseInt(s.amount, 10) || 0);
+      var row = document.createElement("div"); row.className = "st-item";
+      var body = document.createElement("div"); body.className = "st-body"; body.innerHTML = '<div class="stc">'+escapeHtml(s.item || "소비")+'</div>';
+      var amt = document.createElement("span"); amt.className = "st-amt-view"; amt.textContent = wonFmt(s.amount) + "원";
+      var del = document.createElement("button"); del.className = "del"; del.textContent = "✕";
+      del.onclick = function(){ state.studySpend = state.studySpend.filter(function(x){ return x.id !== s.id; }); save(); renderStudySpend(); };
+      row.appendChild(body); row.appendChild(amt); row.appendChild(del);
+      list.appendChild(row);
+    });
+    el("spendFoot").textContent = items.length ? ("합계 " + wonFmt(total) + "원") : "";
+  }
+  function addSpend() {
+    var item = el("stSpendItem").value.trim();
+    var amt = parseInt(el("stSpendAmt").value, 10);
+    if (isNaN(amt) || amt < 0) { el("stSpendAmt").focus(); return; }
+    if (!selectedStudyChild) selectedStudyChild = defaultStudyChild();
+    state.studySpend.push({ id: uid(), memberId: selectedStudyChild, date: ymd(selectedDay), item: item || "소비", amount: amt });
+    el("stSpendItem").value = ""; el("stSpendAmt").value = "";
+    save(); renderStudySpend(); el("stSpendItem").focus();
+  }
+  function saveThanks() { if (!selectedStudyChild) return; state.studyThanks[studyMindKey()] = el("stThanks").value; save(); flashSaved("thanksSaved"); }
+  function renderStudyPlan() {
+    var m = memberById(selectedStudyChild), key = ymd(selectedDay);
+    var items = state.study.filter(function(s){ return s.memberId === selectedStudyChild && s.date === key; });
+    var list = el("studyList"); list.innerHTML = "";
+    if (!items.length) { var e = document.createElement("div"); e.className = "study-empty"; e.textContent = "학습 계획이 없어요. 위에서 추가하세요."; list.appendChild(e); }
+    items.forEach(function(s){
+      var row = document.createElement("div"); row.className = "st-item" + (s.done ? " done" : "");
+      var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
+      cb.onchange = function(){ s.done = cb.checked; save(); renderStudyPlan(); };
+      var badge = document.createElement("span"); badge.className = "st-badge"; badge.style.background = m ? m.color : "#888"; badge.textContent = s.subject || "공부";
+      var body = document.createElement("div"); body.className = "st-body"; body.innerHTML = '<div class="stc">'+escapeHtml(s.content || "")+'</div>';
+      var time = document.createElement("span"); time.className = "st-time"; time.textContent = s.minutes ? (s.minutes + "분") : "";
+      var del = document.createElement("button"); del.className = "del"; del.textContent = "✕";
+      del.onclick = function(){ state.study = state.study.filter(function(x){ return x.id !== s.id; }); save(); renderStudyPlan(); };
+      row.appendChild(cb); row.appendChild(badge); row.appendChild(body); row.appendChild(time); row.appendChild(del);
+      list.appendChild(row);
+    });
+    var done = items.filter(function(s){ return s.done; }).length;
+    var mins = items.reduce(function(a,s){ return a + (parseInt(s.minutes,10) || 0); }, 0);
+    el("studyFoot").textContent = items.length ? (done + "/" + items.length + " 완료" + (mins ? (" · 총 " + mins + "분") : "")) : "";
+  }
+  function renderStudyTasks() {
+    var key = ymd(selectedDay);
+    var items = state.studyTasks.filter(function(s){ return s.memberId === selectedStudyChild && s.date === key; });
+    var list = el("taskList"); list.innerHTML = "";
+    if (!items.length) { var e = document.createElement("div"); e.className = "study-empty"; e.textContent = "해야 할 일이 없어요."; list.appendChild(e); }
+    items.forEach(function(s){
+      var row = document.createElement("div"); row.className = "st-item" + (s.done ? " done" : "");
+      var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
+      cb.onchange = function(){ s.done = cb.checked; save(); renderStudyTasks(); };
+      var body = document.createElement("div"); body.className = "st-body"; body.innerHTML = '<div class="stc">'+escapeHtml(s.text || "")+'</div>';
+      var del = document.createElement("button"); del.className = "del"; del.textContent = "✕";
+      del.onclick = function(){ state.studyTasks = state.studyTasks.filter(function(x){ return x.id !== s.id; }); save(); renderStudyTasks(); };
+      row.appendChild(cb); row.appendChild(body); row.appendChild(del);
+      list.appendChild(row);
+    });
+    var done = items.filter(function(s){ return s.done; }).length;
+    el("taskFoot").textContent = items.length ? (done + "/" + items.length + " 완료") : "";
+  }
+  var savedTimers = {};
+  function flashSaved(id) {
+    var n = el(id); if (!n) return;
+    n.textContent = "✓ 저장됨"; n.style.opacity = "1";
+    if (savedTimers[id]) clearTimeout(savedTimers[id]);
+    savedTimers[id] = setTimeout(function(){ n.style.opacity = "0"; }, 1300);
+  }
+  function saveGoalWeek() { if (!selectedStudyChild) return; state.studyGoalsWeek[studyWeekKey()] = el("stGoalWeek").value; save(); flashSaved("goalSaved"); }
+  function saveGoalMonth() { if (!selectedStudyChild) return; state.studyGoalsMonth[studyMonthKey()] = el("stGoalMonth").value; save(); flashSaved("goalSaved"); }
+  function saveMind() { if (!selectedStudyChild) return; state.studyMind[studyMindKey()] = el("stMind").value; save(); flashSaved("mindSaved"); }
+  var MIND_EMOJIS = ["😊","💪","🔥","😤","😴","✨","🙂","😢"];
+  function buildMindEmojis() {
+    var wrap = el("mindEmojis"); if (!wrap || wrap.childElementCount) return;
+    MIND_EMOJIS.forEach(function(e){
+      var btn = document.createElement("button"); btn.type = "button"; btn.className = "emoji-btn"; btn.textContent = e;
+      btn.onclick = function(){ el("stMind").value = (el("stMind").value + e); saveMind(); el("stMind").focus(); };
+      wrap.appendChild(btn);
+    });
+  }
+  function addStudy() {
+    var subj = el("stSubject").value.trim();
+    var cont = el("stContent").value.trim();
+    var min = parseInt(el("stMin").value, 10);
+    if (!subj && !cont) { el("stContent").focus(); return; }
+    if (!selectedStudyChild) selectedStudyChild = defaultStudyChild();
+    state.study.push({ id: uid(), memberId: selectedStudyChild, date: ymd(selectedDay),
+      subject: subj || "공부", content: cont, minutes: (isNaN(min) || min < 0) ? 0 : min, done: false });
+    el("stSubject").value = ""; el("stContent").value = ""; el("stMin").value = "";
+    save(); renderStudyPlan(); el("stSubject").focus();
+  }
+  function addStudyTask() {
+    var v = el("stTaskInput").value.trim();
+    if (!v) { el("stTaskInput").focus(); return; }
+    if (!selectedStudyChild) selectedStudyChild = defaultStudyChild();
+    state.studyTasks.push({ id: uid(), memberId: selectedStudyChild, date: ymd(selectedDay), text: v, done: false });
+    el("stTaskInput").value = ""; save(); renderStudyTasks(); el("stTaskInput").focus();
+  }
+
+  // ---------- List / Search ----------
+  function renderList() {
+    var body = el("listBody"); body.innerHTML = "";
+    var q = searchQuery.trim().toLowerCase();
+    var rows = state.events.filter(function(ev){ return eventVisible(ev); }).filter(function(ev){
+      if (!q) return true;
+      return (ev.title||"").toLowerCase().indexOf(q) >= 0
+        || (ev.note||"").toLowerCase().indexOf(q) >= 0
+        || eventMemberNames(ev).toLowerCase().indexOf(q) >= 0;
+    });
+    rows.sort(function(a,b){ return (a.date+ (a.time||"")).localeCompare(b.date + (b.time||"")); });
+    if (!rows.length) {
+      var e = document.createElement("div"); e.className="list-empty";
+      e.textContent = q ? "\""+searchQuery+"\" 검색 결과가 없습니다." : "등록된 일정이 없습니다.";
+      body.appendChild(e); return;
+    }
+    rows.forEach(function(ev){
+      var d = parseYmd(ev.date);
+      var row = document.createElement("div"); row.className = "lrow";
+      var rep = ev.repeat && ev.repeat!=="none" ? '<span class="lrep">'+repeatLabel(ev.repeat)+'</span>' : "";
+      var clip = (ev.attachments && ev.attachments.length) ? " 📎" : "";
+      var dateStr = (d.getMonth()+1)+"/"+d.getDate()+" ("+DOW[d.getDay()]+")";
+      if (ev.allday && ev.endDate && ev.endDate !== ev.date) { var ed = parseYmd(ev.endDate); dateStr += " ~ " + (ed.getMonth()+1)+"/"+ed.getDate(); }
+      var dots = eventMembers(ev).map(function(m){ return '<span class="ldot" style="background:'+m.color+'"></span>'; }).join("");
+      row.innerHTML =
+        '<span class="ldate">'+dateStr+'</span>' +
+        '<span style="flex:none;display:flex;gap:3px">'+dots+'</span>' +
+        '<span class="ltitle">'+escapeHtml(ev.title)+clip+'</span>' +
+        '<span class="ltime">'+(ev.allday?"종일":((ev.time||"")+(ev.endTime?"~"+ev.endTime:"")))+'</span>' + rep;
+      row.onclick = function(){ openEdit(ev.id); };
+      body.appendChild(row);
+    });
+  }
+
+  // ---------- Attachments (IndexedDB) ----------
+  var _db = null;
+  function idb() {
+    return new Promise(function(res, rej){
+      if (_db) return res(_db);
+      var r = indexedDB.open("family_schedule_files", 1);
+      r.onupgradeneeded = function(){ if (!r.result.objectStoreNames.contains("attachments")) r.result.createObjectStore("attachments", { keyPath: "id" }); };
+      r.onsuccess = function(){ _db = r.result; res(_db); };
+      r.onerror = function(){ rej(r.error); };
+    });
+  }
+  function idbPut(rec){ return idb().then(function(db){ return new Promise(function(res,rej){ var tx=db.transaction("attachments","readwrite"); tx.objectStore("attachments").put(rec); tx.oncomplete=function(){res();}; tx.onerror=function(){rej(tx.error);}; }); }); }
+  function idbGet(id){ return idb().then(function(db){ return new Promise(function(res,rej){ var tx=db.transaction("attachments","readonly"); var rq=tx.objectStore("attachments").get(id); rq.onsuccess=function(){res(rq.result);}; rq.onerror=function(){rej(rq.error);}; }); }); }
+  function idbDel(id){ return idb().then(function(db){ return new Promise(function(res,rej){ var tx=db.transaction("attachments","readwrite"); tx.objectStore("attachments").delete(id); tx.oncomplete=function(){res();}; tx.onerror=function(){rej(tx.error);}; }); }); }
+  function idbAll(){ return idb().then(function(db){ return new Promise(function(res,rej){ var tx=db.transaction("attachments","readonly"); var rq=tx.objectStore("attachments").getAll(); rq.onsuccess=function(){res(rq.result||[]);}; rq.onerror=function(){rej(rq.error);}; }); }); }
+  function idbClear(){ return idb().then(function(db){ return new Promise(function(res,rej){ var tx=db.transaction("attachments","readwrite"); tx.objectStore("attachments").clear(); tx.oncomplete=function(){res();}; tx.onerror=function(){rej(tx.error);}; }); }); }
+
+  function readDataUrl(file){ return new Promise(function(res,rej){ var r=new FileReader(); r.onload=function(){res(r.result);}; r.onerror=function(){rej(r.error);}; r.readAsDataURL(file); }); }
+  function loadImage(src){ return new Promise(function(res,rej){ var i=new Image(); i.onload=function(){res(i);}; i.onerror=function(){rej(new Error("img"));}; i.src=src; }); }
+  function drawResized(img, maxDim, type, q){
+    var w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+    var scale=Math.min(1, maxDim/Math.max(w,h));
+    var cw=Math.max(1,Math.round(w*scale)), ch=Math.max(1,Math.round(h*scale));
+    var c=document.createElement("canvas"); c.width=cw; c.height=ch;
+    var ctx=c.getContext("2d");
+    if (type==="image/jpeg"){ ctx.fillStyle="#fff"; ctx.fillRect(0,0,cw,ch); }
+    ctx.drawImage(img,0,0,cw,ch);
+    var dataUrl=c.toDataURL(type, q);
+    return { dataUrl:dataUrl, type:type, size:Math.round(dataUrl.length*0.75) };
+  }
+  function processFile(file){
+    var MAXRAW = 15*1024*1024;
+    if (file.size > MAXRAW) { alert('"'+file.name+'"(이)가 너무 큽니다. 15MB 이하만 첨부할 수 있어요.'); return Promise.resolve(null); }
+    if (file.type.indexOf("image/")===0) {
+      return readDataUrl(file).then(function(src){ return loadImage(src).then(function(img){
+        var isPng = file.type.indexOf("png")>=0;
+        var full = drawResized(img, 1600, isPng?"image/png":"image/jpeg", 0.72);
+        var thumb = drawResized(img, 240, "image/jpeg", 0.6);
+        return { id:uid(), name:file.name, type:full.type, size:full.size, thumb:thumb.dataUrl, dataUrl:full.dataUrl, _new:true };
+      }); }).catch(function(){ return readDataUrl(file).then(function(src){ return { id:uid(), name:file.name, type:file.type, size:file.size, thumb:null, dataUrl:src, _new:true }; }); });
+    }
+    return readDataUrl(file).then(function(src){ return { id:uid(), name:file.name, type:file.type||"application/octet-stream", size:file.size, thumb:null, dataUrl:src, _new:true }; });
+  }
+  function addModalFiles(files){
+    var arr = Array.prototype.slice.call(files);
+    var seq = Promise.resolve();
+    arr.forEach(function(f){ seq = seq.then(function(){ return processFile(f).then(function(rec){ if (rec){ modalAttachments.push(rec); renderModalAttach(); } }); }); });
+  }
+  function renderModalAttach(){
+    var wrap = el("fAttach"); wrap.innerHTML = "";
+    modalAttachments.forEach(function(a){
+      var chip = document.createElement("div"); chip.className = "att";
+      if (a.type && a.type.indexOf("image/")===0 && a.thumb) chip.innerHTML = '<img src="'+a.thumb+'" alt="">';
+      else chip.innerHTML = '<span class="fic">📄</span>';
+      var nm = document.createElement("span"); nm.className="an"; nm.textContent = a.name; chip.appendChild(nm);
+      var del = document.createElement("button"); del.className="ax"; del.type="button"; del.textContent="✕";
+      del.onclick = function(e){ e.stopPropagation(); removeModalAttach(a.id); };
+      chip.appendChild(del);
+      chip.onclick = function(){ viewAttachment(a); };
+      wrap.appendChild(chip);
+    });
+  }
+  function removeModalAttach(id){
+    var a = modalAttachments.filter(function(x){ return x.id===id; })[0];
+    if (a && !a._new) modalRemovedAtt.push(id);
+    modalAttachments = modalAttachments.filter(function(x){ return x.id!==id; });
+    renderModalAttach();
+  }
+  function dataUrlToBlob(dataUrl){
+    var parts = dataUrl.split(","); var meta = parts[0]; var b64 = parts[1];
+    var mime = (meta.match(/:(.*?);/)||[])[1] || "application/octet-stream";
+    var bin = atob(b64); var len = bin.length; var arr = new Uint8Array(len);
+    for (var i=0;i<len;i++) arr[i]=bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  }
+  function viewAttachment(a){
+    var get = a.dataUrl
+      ? Promise.resolve(a.dataUrl)
+      : idbGet(a.id).then(function(r){ return r && r.dataUrl; }).then(function(du){ return du ? du : attachFetch(a.id); });
+    get.then(function(dataUrl){
+      if (!dataUrl) { alert("첨부를 불러올 수 없습니다."); return; }
+      var url = URL.createObjectURL(dataUrlToBlob(dataUrl));
+      var w = window.open(url, "_blank");
+      if (!w) { var link=document.createElement("a"); link.href=url; link.download=a.name; link.click(); }
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+    });
+  }
+
+  // ---------- Event modal ----------
+  function renderMemberPicker(selectedIds) {
+    var sel = new Set(selectedIds || []);
+    var wrap = el("fMembers"); wrap.innerHTML = "";
+    // "전체" 토글 (온 가족 공통 일정용)
+    var isAll = state.members.length > 0 && state.members.every(function(m){ return sel.has(m.id); });
+    var all = document.createElement("div");
+    all.className = "chip" + (isAll ? " sel" : "");
+    all.innerHTML = "👪 전체";
+    all.onclick = function(){
+      var nowAll = state.members.every(function(m){ return sel.has(m.id); });
+      var next = nowAll ? [] : state.members.map(function(m){ return m.id; });
+      if (!next.length && state.members[0]) next = [state.members[0].id];
+      renderMemberPicker(next);
+    };
+    wrap.appendChild(all);
+    state.members.forEach(function(m){
+      var c = document.createElement("div");
+      c.className = "chip" + (sel.has(m.id) ? " sel" : "");
+      c.innerHTML = '<span class="dot" style="background:'+m.color+'"></span>'+escapeHtml(m.name);
+      c.dataset.id = m.id;
+      c.onclick = function(){
+        if (sel.has(m.id)) sel.delete(m.id); else sel.add(m.id);
+        if (sel.size === 0) sel.add(m.id); // 최소 한 명은 유지
+        renderMemberPicker(Array.from(sel));
+      };
+      wrap.appendChild(c);
+    });
+  }
+  function pickedMembers() {
+    var picked = {};
+    el("fMembers").querySelectorAll(".chip.sel").forEach(function(n){ if (n.dataset.id) picked[n.dataset.id] = true; });
+    var ids = state.members.filter(function(m){ return picked[m.id]; }).map(function(m){ return m.id; });
+    if (!ids.length && state.members[0]) ids.push(state.members[0].id);
+    return ids;
+  }
+  function openNew(date, memberId, time) {
+    editingId = null;
+    el("evModalTitle").textContent = "일정 추가";
+    el("fTitle").value = "";
+    el("fDate").value = ymd(date || selectedDay);
+    el("fEndDate").value = ymd(date || selectedDay);
+    el("fTime").value = time || "09:00";
+    el("fEndTime").value = addHour(time || "09:00");
+    el("fAllday").checked = false;
+    el("fRepeat").value = "none";
+    el("fNote").value = "";
+    renderMemberPicker(memberId ? [memberId] : (state.members[0] ? [state.members[0].id] : []));
+    el("evDelete").classList.add("hidden");
+    modalAttachments = []; modalRemovedAtt = []; renderModalAttach();
+    el("attField").style.display = IDB_OK ? "" : "none";
+    el("micStatus").textContent = "";
+    syncAllday(); openOverlay("evOverlay");
+    setTimeout(function(){ el("fTitle").focus(); }, 50);
+  }
+  function openEdit(id) {
+    var ev = null;
+    for (var i=0;i<state.events.length;i++) if (state.events[i].id===id) ev = state.events[i];
+    if (!ev) return;
+    editingId = id;
+    el("evModalTitle").textContent = "일정 수정";
+    el("fTitle").value = ev.title;
+    el("fDate").value = ev.date;
+    el("fEndDate").value = ev.endDate || ev.date;
+    el("fTime").value = ev.time || "09:00";
+    el("fEndTime").value = ev.endTime || addHour(ev.time || "09:00");
+    el("fAllday").checked = !!ev.allday;
+    el("fRepeat").value = ev.repeat || "none";
+    el("fNote").value = ev.note || "";
+    renderMemberPicker(ev.memberIds || (ev.memberId ? [ev.memberId] : []));
+    el("evDelete").classList.remove("hidden");
+    modalAttachments = (ev.attachments || []).map(function(a){ return { id:a.id, name:a.name, type:a.type, size:a.size, thumb:a.thumb||null }; });
+    modalRemovedAtt = [];
+    el("attField").style.display = IDB_OK ? "" : "none";
+    el("micStatus").textContent = "";
+    renderModalAttach();
+    syncAllday(); openOverlay("evOverlay");
+  }
+  function saveEvent() {
+    var title = el("fTitle").value.trim();
+    if (!title) { el("fTitle").focus(); return; }
+    var id = editingId || uid();
+    var allday = el("fAllday").checked;
+    var startDate = el("fDate").value;
+    var endDate = el("fEndDate").value || startDate;
+    if (allday && endDate < startDate) endDate = startDate; // 종료일이 앞서면 시작일로 맞춤
+    var startTime = el("fTime").value;
+    var endTime = el("fEndTime").value;
+    if (!allday && (!endTime || endTime <= startTime)) endTime = addHour(startTime); // 종료시간이 시작보다 앞서면 +1시간
+    var data = {
+      id: id, title: title, memberIds: pickedMembers(), date: startDate,
+      endDate: allday ? endDate : "",
+      allday: allday, time: allday ? "" : startTime, endTime: allday ? "" : endTime,
+      repeat: el("fRepeat").value, note: el("fNote").value.trim(),
+      attachments: modalAttachments.map(function(a){ return { id:a.id, name:a.name, type:a.type, size:a.size, thumb:a.thumb||null }; })
+    };
+    var ops = [];
+    modalAttachments.forEach(function(a){ if (a._new) { ops.push(idbPut({ id:a.id, eventId:id, name:a.name, type:a.type, dataUrl:a.dataUrl })); attachPush({ id:a.id, name:a.name, type:a.type, dataUrl:a.dataUrl }); } });
+    modalRemovedAtt.forEach(function(rid){ ops.push(idbDel(rid)); attachRemove(rid); });
+    Promise.all(ops).catch(function(){}).then(function(){
+      if (editingId) {
+        for (var i=0;i<state.events.length;i++) if (state.events[i].id===editingId) state.events[i] = data;
+      } else { state.events.push(data); }
+      save(); closeOverlay("evOverlay");
+      if (data.date) selectedDay = parseYmd(data.date);
+      render();
+    });
+  }
+  function deleteEvent() {
+    if (!editingId) return;
+    if (!confirm("이 일정을 삭제할까요?")) return;
+    var ev = null;
+    for (var i=0;i<state.events.length;i++) if (state.events[i].id===editingId) ev = state.events[i];
+    if (ev && ev.attachments) ev.attachments.forEach(function(a){ idbDel(a.id); attachRemove(a.id); });
+    state.events = state.events.filter(function(e){ return e.id !== editingId; });
+    save(); closeOverlay("evOverlay"); render();
+  }
+  function addHour(t) {
+    var p = (t || "09:00").split(":"); var h = (+p[0]) + 1;
+    if (h > 23) return "23:59";
+    return pad(h) + ":" + pad(+p[1] || 0);
+  }
+  function syncAllday() {
+    var allday = el("fAllday").checked;
+    el("timeRow").style.display = allday ? "none" : "";
+    el("endWrap").style.display = allday ? "" : "none";
+    el("fDateLabel").textContent = allday ? "시작일" : "날짜";
+    if (allday) {
+      if (!el("fEndDate").value || el("fEndDate").value < el("fDate").value) el("fEndDate").value = el("fDate").value;
+    } else {
+      if (!el("fEndTime").value || el("fEndTime").value <= el("fTime").value) el("fEndTime").value = addHour(el("fTime").value);
+    }
+  }
+
+  // ---------- Members modal ----------
+  function renderMemList() {
+    var wrap = el("memList"); wrap.innerHTML = "";
+    state.members.forEach(function(m){
+      var row = document.createElement("div");
+      row.style.cssText = "display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-soft)";
+      row.innerHTML =
+        '<input type="color" value="'+m.color+'" style="width:36px;height:30px;padding:0;border:1px solid var(--border);border-radius:8px;background:var(--bg)">' +
+        '<input type="text" value="'+escapeHtml(m.name)+'" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)">' +
+        '<button class="btn" style="color:#ef4444">삭제</button>';
+      var color = row.children[0], name = row.children[1], del = row.children[2];
+      color.oninput = function(){ m.color = color.value; save(); renderMembers(); render(); };
+      name.onchange = function(){ m.name = name.value.trim() || m.name; save(); renderMembers(); render(); };
+      del.onclick = function(){
+        if (state.members.length <= 1) { alert("최소 한 명은 있어야 해요."); return; }
+        if (!confirm(m.name + " 구성원을 삭제할까요? 이 구성원만 있는 일정은 삭제되고, 공통 일정에서는 제외됩니다.")) return;
+        state.events.forEach(function(e){ if (e.memberIds) e.memberIds = e.memberIds.filter(function(id){ return id !== m.id; }); });
+        state.events = state.events.filter(function(e){ return e.memberIds && e.memberIds.length > 0; });
+        state.members = state.members.filter(function(x){ return x.id !== m.id; });
+        if (activeFilter) activeFilter.delete(m.id);
+        save(); renderMemList(); renderMembers(); render();
+      };
+      wrap.appendChild(row);
+    });
+  }
+  function addMember() {
+    var name = el("memName").value.trim();
+    if (!name) { el("memName").focus(); return; }
+    var color = el("memColor").value || PALETTE[state.members.length % PALETTE.length];
+    state.members.push({ id: uid(), name: name, color: color });
+    el("memName").value = "";
+    el("memColor").value = PALETTE[state.members.length % PALETTE.length];
+    save(); renderMemList(); renderMembers(); render();
+  }
+
+  // ---------- Import / Export ----------
+  function exportData() {
+    var getAtts = IDB_OK ? idbAll().catch(function(){ return []; }) : Promise.resolve([]);
+    getAtts.then(function(atts){
+      var out = { members: state.members, events: state.events, todos: state.todos, study: state.study, studyTasks: state.studyTasks, studyGoals: state.studyGoals, studyGoalsWeek: state.studyGoalsWeek, studyGoalsMonth: state.studyGoalsMonth, studyMind: state.studyMind, studySpend: state.studySpend, studyThanks: state.studyThanks, attachments: atts };
+      var blob = new Blob([JSON.stringify(out)], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a"); a.href = url; a.download = "가족일정_" + ymd(new Date()) + ".json"; a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+  function importData(file) {
+    var reader = new FileReader();
+    reader.onload = function(){
+      try {
+        var d = JSON.parse(reader.result);
+        if (!d.members || !d.events) throw new Error("형식 오류");
+        if (!d.todos) d.todos = [];
+        if (!d.study) d.study = [];
+        if (!confirm("현재 데이터를 가져온 백업으로 덮어쓸까요?")) return;
+        var atts = d.attachments || [];
+        state = { members: d.members, events: d.events, todos: d.todos, study: d.study,
+          studyTasks: d.studyTasks || [], studyGoals: d.studyGoals || {},
+          studyGoalsWeek: d.studyGoalsWeek || {}, studyGoalsMonth: d.studyGoalsMonth || {},
+          studyMind: d.studyMind || {}, studySpend: d.studySpend || [], studyThanks: d.studyThanks || {} };
+        activeFilter = null; save();
+        var restore = IDB_OK
+          ? idbClear().then(function(){ return Promise.all(atts.map(function(a){ return idbPut(a); })); })
+          : Promise.resolve();
+        restore.then(function(){ renderMembers(); render(); alert("가져오기 완료!"); })
+               .catch(function(){ renderMembers(); render(); alert("가져오기 완료 (첨부 일부는 복원하지 못했습니다)."); });
+      } catch (e) { alert("올바른 백업 파일이 아닙니다."); }
+    };
+    reader.readAsText(file);
+  }
+
+  // ---------- Naver integration (optional backend) ----------
+  var naver = { available: false, configured: false, connected: false };
+  function initNaver() {
+    fetch("/api/naver/status", { credentials: "same-origin" })
+      .then(function(r){ if (!r.ok) throw new Error("no backend"); return r.json(); })
+      .then(function(d){ naver.available = true; naver.configured = !!d.configured; naver.connected = !!d.connected; updateNaverUI(); })
+      .catch(function(){ naver.available = false; updateNaverUI(); });
+  }
+  function updateNaverUI() {
+    var btn = el("btnNaver");
+    // 백엔드가 있고 네이버 연동이 실제로 설정된 경우에만 버튼 노출
+    if (!naver.available || !naver.configured) { btn.style.display = "none"; }
+    else { btn.style.display = ""; btn.textContent = naver.connected ? "네이버 ✓" : "네이버 연결";
+      btn.title = naver.connected ? "네이버 캘린더 연결됨 (클릭 시 해제)" : "네이버 캘린더에 연결"; }
+    el("evNaver").style.display = (naver.available && naver.configured && naver.connected) ? "" : "none";
+  }
+  function naverConnect() {
+    if (!naver.connected) { window.location.href = "/api/naver/login"; }
+    else {
+      if (!confirm("네이버 캘린더 연결을 해제할까요?")) return;
+      fetch("/api/naver/logout", { method: "POST", credentials: "same-origin" })
+        .then(function(){ naver.connected = false; updateNaverUI(); });
+    }
+  }
+  function naverRegisterCurrent() {
+    var title = el("fTitle").value.trim();
+    if (!title) { el("fTitle").focus(); return; }
+    var _allday = el("fAllday").checked;
+    var _end = el("fEndDate").value || el("fDate").value;
+    if (_allday && _end < el("fDate").value) _end = el("fDate").value;
+    var _et = el("fEndTime").value;
+    if (!_allday && (!_et || _et <= el("fTime").value)) _et = addHour(el("fTime").value);
+    var payload = { title: title, date: el("fDate").value, endDate: _allday ? _end : "", allday: _allday,
+      time: _allday ? "" : el("fTime").value, endTime: _allday ? "" : _et, repeat: el("fRepeat").value, note: el("fNote").value.trim() };
+    var btn = el("evNaver"); var prev = btn.textContent; btn.disabled = true; btn.textContent = "등록 중…";
+    fetch("/api/naver/schedule", { method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+      .then(function(r){ return r.json().then(function(b){ return { ok: r.ok, body: b }; }); })
+      .then(function(res){
+        if (res.ok && res.body.result === "success") alert("네이버 캘린더에 등록되었습니다.");
+        else if (res.body && res.body.error === "not_connected") { naver.connected = false; updateNaverUI(); alert("네이버 연결이 만료되었습니다. 다시 연결해 주세요."); }
+        else alert("등록 실패: " + (res.body && res.body.message ? res.body.message : "알 수 없는 오류"));
+      })
+      .catch(function(){ alert("등록 중 네트워크 오류가 발생했습니다."); })
+      .finally(function(){ btn.disabled = false; btn.textContent = prev; });
+  }
+
+  // ---------- Speech input (STT + 규칙 기반 파싱) ----------
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var recog = null, recognizing = false;
+  var KHOUR = {"한":1,"두":2,"세":3,"네":4,"다섯":5,"여섯":6,"일곱":7,"여덟":8,"여덜":8,"아홉":9,"열":10,"열한":11,"열두":12};
+
+  function parseTimes(t) {
+    var re = /(오전|오후|아침|저녁|낮|밤)?\s*(\d{1,2}|열두|열한|열|한|두|세|네|다섯|여섯|일곱|여덟|여덜|아홉)\s*시\s*(반|(\d{1,2})\s*분)?/g;
+    var out = [], m;
+    while (m = re.exec(t)) {
+      var ap = m[1], hr = m[2];
+      var h = /^\d+$/.test(hr) ? +hr : KHOUR[hr];
+      var min = 0;
+      if (m[3] === "반") min = 30; else if (m[4]) min = +m[4];
+      if (ap==="오후"||ap==="저녁"||ap==="밤"||ap==="낮") { if (h < 12) h += 12; }
+      else if (ap==="오전"||ap==="아침") { if (h === 12) h = 0; }
+      if (h > 23) h = 23; if (min > 59) min = 59;
+      out.push({ h:h, m:min, raw:m[0] });
+    }
+    if (/정오/.test(t)) out.push({ h:12, m:0, raw:"정오" });
+    if (/자정/.test(t)) out.push({ h:0, m:0, raw:"자정" });
+    return out;
+  }
+  function parseDateSpeech(t) {
+    var today = startOfDay(new Date()), m;
+    if (m = t.match(/오늘|내일|모레|글피/)) {
+      var w = m[0], d = w==="오늘"?0:w==="내일"?1:w==="모레"?2:3;
+      return { date: ymd(addDays(today, d)), raw: w };
+    }
+    var wd = t.match(/(다음\s*주|담주|이번\s*주)?\s*([월화수목금토일])요일/);
+    if (wd) {
+      var map = {"일":0,"월":1,"화":2,"수":3,"목":4,"금":5,"토":6}, target = map[wd[2]];
+      var diff = (target - today.getDay() + 7) % 7, base = addDays(today, diff);
+      if (/다음|담/.test(wd[1] || "")) base = addDays(base, 7);
+      return { date: ymd(base), raw: wd[0].trim() };
+    }
+    if (m = t.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/)) return { date: today.getFullYear()+"-"+pad(+m[1])+"-"+pad(+m[2]), raw: m[0] };
+    if (m = t.match(/(\d{1,2})\s*[\/.]\s*(\d{1,2})/)) return { date: today.getFullYear()+"-"+pad(+m[1])+"-"+pad(+m[2]), raw: m[0] };
+    if (m = t.match(/(\d{1,2})\s*일/)) {
+      var da = +m[1], dt = new Date(today.getFullYear(), today.getMonth(), da);
+      if (dt < today) dt = new Date(today.getFullYear(), today.getMonth()+1, da);
+      return { date: ymd(dt), raw: m[0] };
+    }
+    return null;
+  }
+  function parseSpeech(text) {
+    var t = " " + text + " ";
+    var res = { title:"", memberIds:[], allday:false, date:null, time:null, endTime:null };
+    var consumed = [], mm;
+
+    if (mm = t.match(/전체|온\s*가족|우리\s*가족|다\s*같이|다\s*함께|모두/)) { res.memberIds = state.members.map(function(x){ return x.id; }); consumed.push(mm[0]); }
+    state.members.forEach(function(x){ if (x.name && t.indexOf(x.name) >= 0) { if (res.memberIds.indexOf(x.id) < 0) res.memberIds.push(x.id); consumed.push(x.name); } });
+
+    if (mm = t.match(/하루\s*종일|온종일|종일/)) { res.allday = true; consumed.push(mm[0]); }
+
+    var dp = parseDateSpeech(t);
+    if (dp) { res.date = dp.date; consumed.push(dp.raw); }
+
+    if (!res.allday) {
+      var times = parseTimes(t);
+      if (times.length) {
+        res.time = pad(times[0].h) + ":" + pad(times[0].m);
+        if (times.length >= 2) res.endTime = pad(times[1].h) + ":" + pad(times[1].m);
+        times.forEach(function(x){ consumed.push(x.raw); });
+      }
+    }
+
+    var title = text;
+    consumed.forEach(function(s){ if (s) title = title.split(s).join(" "); });
+    title = title.replace(/(일정을?|추가해?\s*줘?|등록해?\s*줘?|만들어?\s*줘?|잡아?\s*줘?|좀|에다가|에다|부터|까지|에서|~|–|-)/g, " ");
+    title = title.replace(/\s+에\s+/g, " ").replace(/^\s*에\s+/, " ");
+    title = title.replace(/\s+/g, " ").trim();
+    res.title = title;
+    return res;
+  }
+  function applyParsed(p) {
+    if (p.memberIds && p.memberIds.length) renderMemberPicker(p.memberIds);
+    if (p.allday) el("fAllday").checked = true; else if (p.time) el("fAllday").checked = false;
+    syncAllday();
+    if (p.date) { el("fDate").value = p.date; if (!el("fEndDate").value || el("fEndDate").value < p.date) el("fEndDate").value = p.date; }
+    if (!p.allday) {
+      if (p.time) el("fTime").value = p.time;
+      if (p.endTime) el("fEndTime").value = p.endTime; else if (p.time) el("fEndTime").value = addHour(p.time);
+    }
+    if (p.title) el("fTitle").value = p.title;
+  }
+  function toggleMic() {
+    if (!SR) { alert("이 브라우저는 음성 인식을 지원하지 않습니다. (안드로이드 크롬/삼성인터넷 권장)"); return; }
+    if (recognizing) { if (recog) recog.stop(); return; }
+    recog = new SR(); recog.lang = "ko-KR"; recog.interimResults = true; recog.maxAlternatives = 1;
+    var finalText = "";
+    recog.onstart = function(){ recognizing = true; el("micBtn").classList.add("rec"); el("micBtn").textContent = "⏹ 듣는 중"; el("micStatus").textContent = "말씀하세요… (예: 내일 오후 3시 윤호 치과)"; };
+    recog.onresult = function(e){ var interim = ""; for (var i = e.resultIndex; i < e.results.length; i++){ var r = e.results[i]; if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript; } el("micStatus").textContent = (finalText + interim).trim(); };
+    recog.onerror = function(e){ el("micStatus").textContent = "인식 오류: " + e.error + (e.error === "not-allowed" ? " (마이크 권한을 허용해 주세요)" : ""); };
+    recog.onend = function(){ recognizing = false; el("micBtn").classList.remove("rec"); el("micBtn").textContent = "🎤 말로 입력"; var txt = (finalText || el("micStatus").textContent || "").trim(); if (txt) { applyParsed(parseSpeech(txt)); el("micStatus").textContent = "“" + txt + "” 인식됨 — 내용을 확인 후 저장하세요."; } };
+    try { recog.start(); } catch (e) {}
+  }
+
+  // ---------- Cloud sync (Firebase 실시간 동기화) ----------
+  function loadScript(src) {
+    return new Promise(function(res, rej){ var s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+  }
+  function syncPayload() {
+    return {
+      data: {
+        members: state.members, events: state.events, todos: state.todos,
+        study: state.study, studyTasks: state.studyTasks,
+        studyGoals: state.studyGoals, studyGoalsWeek: state.studyGoalsWeek, studyGoalsMonth: state.studyGoalsMonth,
+        studyMind: state.studyMind, studySpend: state.studySpend, studyThanks: state.studyThanks
+      },
+      updatedAt: Date.now(), deviceId: deviceId
+    };
+  }
+  function pushNow() {
+    if (!syncEnabled || !syncRef) return;
+    var p = syncPayload(); lastApplied = p.updatedAt;
+    try { syncRef.set(p).catch(function(){}); } catch (e) {}
+  }
+  function scheduleSync() {
+    if (!syncEnabled || applyingRemote) return;
+    if (pushTimer) clearTimeout(pushTimer);
+    pushTimer = setTimeout(pushNow, 800);
+  }
+  // 첨부(사진·파일)를 클라우드에 개별 노드로 저장/조회/삭제
+  function attachPush(rec) {
+    if (!syncEnabled || !attRef || !rec || !rec.dataUrl) return;
+    try { attRef.child(rec.id).set({ name: rec.name, type: rec.type, dataUrl: rec.dataUrl, ts: Date.now() }).catch(function(){}); } catch (e) {}
+  }
+  function attachRemove(id) {
+    if (!syncEnabled || !attRef) return;
+    try { attRef.child(id).remove().catch(function(){}); } catch (e) {}
+  }
+  function attachFetch(id) {
+    if (!syncEnabled || !attRef) return Promise.resolve(null);
+    return attRef.child(id).once("value").then(function(s){
+      var v = s.val();
+      if (v && v.dataUrl) { idbPut({ id: id, name: v.name, type: v.type, dataUrl: v.dataUrl }).catch(function(){}); return v.dataUrl; }
+      return null;
+    }).catch(function(){ return null; });
+  }
+  // 기존 로컬 첨부를 클라우드로 1회 백필(없는 것만 업로드)
+  function backfillAttachments() {
+    if (!syncEnabled || !attRef || !IDB_OK) return;
+    idbAll().then(function(list){
+      list.forEach(function(rec){
+        if (!rec.dataUrl) return;
+        attRef.child(rec.id).once("value").then(function(s){
+          if (!s.exists()) attRef.child(rec.id).set({ name: rec.name, type: rec.type, dataUrl: rec.dataUrl, ts: Date.now() }).catch(function(){});
+        }).catch(function(){});
+      });
+    }).catch(function(){});
+  }
+  function applyRemote(val) {
+    applyingRemote = true;
+    var d = val.data || {};
+    if (d.members) state.members = d.members;
+    state.events = d.events || [];
+    state.todos = d.todos || [];
+    state.study = d.study || [];
+    state.studyTasks = d.studyTasks || [];
+    state.studyGoals = d.studyGoals || {};
+    state.studyGoalsWeek = d.studyGoalsWeek || {};
+    state.studyGoalsMonth = d.studyGoalsMonth || {};
+    state.studyMind = d.studyMind || {};
+    state.studySpend = d.studySpend || [];
+    state.studyThanks = d.studyThanks || {};
+    lastApplied = val.updatedAt || Date.now();
+    rawSave();
+    applyingRemote = false;
+    activeFilter = null;
+    renderMembers(); render();
+  }
+  function initSync() {
+    fetch("/api/firebase-config", { credentials: "same-origin" })
+      .then(function(r){ return r.ok ? r.json() : { configured:false }; })
+      .then(function(d){ if (d && d.configured && d.config) startSync(d.config); })
+      .catch(function(){});
+  }
+  function startSync(cfg) {
+    var base = "https://www.gstatic.com/firebasejs/10.12.2/";
+    loadScript(base + "firebase-app-compat.js")
+      .then(function(){ return loadScript(base + "firebase-auth-compat.js"); })
+      .then(function(){ return loadScript(base + "firebase-database-compat.js"); })
+      .then(function(){
+        firebase.initializeApp(cfg);
+        var go = function(){
+          syncRef = firebase.database().ref("familyState");
+          attRef = firebase.database().ref("attachments");
+          syncEnabled = true;
+          el("syncBadge").style.display = "";
+          backfillAttachments();
+          var first = true;
+          syncRef.on("value", function(snap){
+            var val = snap.val();
+            if (first) { first = false; if (!val) { pushNow(); return; } }
+            if (!val || !val.data) return;
+            if (val.deviceId === deviceId) return;         // 내 기기가 쓴 것(에코) 무시
+            if ((val.updatedAt || 0) <= lastApplied) return; // 오래된 것 무시
+            applyRemote(val);
+          }, function(){ syncEnabled = false; el("syncBadge").style.display = "none"; });
+        };
+        // 익명 로그인 시도(활성화된 경우) 후 연결 — 실패해도 진행
+        try { firebase.auth().signInAnonymously().then(go).catch(go); } catch (e) { go(); }
+      })
+      .catch(function(){});
+  }
+
+  // ---------- Overlays / utils ----------
+  function openOverlay(id){ el(id).classList.add("open"); }
+  function closeOverlay(id){ el(id).classList.remove("open"); }
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+
+  // ---------- Wire up ----------
+  el("segMonth").onclick = function(){ view="month"; render(); };
+  el("segWeek").onclick = function(){ view="week"; render(); };
+  el("segList").onclick = function(){ view="list"; render(); setTimeout(function(){ el("searchInput").focus(); }, 30); };
+  el("segStudy").onclick = function(){ view="study"; render(); };
+  el("btnToday").onclick = function(){ cursor = startOfDay(new Date()); selectedDay = startOfDay(new Date()); render(); };
+  el("btnPrev").onclick = function(){
+    if (view==="study") selectedDay = addDays(selectedDay, -1);
+    else cursor = view==="month" ? new Date(cursor.getFullYear(), cursor.getMonth()-1, 1) : addDays(cursor, -7);
+    render();
+  };
+  el("btnNext").onclick = function(){
+    if (view==="study") selectedDay = addDays(selectedDay, 1);
+    else cursor = view==="month" ? new Date(cursor.getFullYear(), cursor.getMonth()+1, 1) : addDays(cursor, 7);
+    render();
+  };
+  el("fab").onclick = function(){ openNew(selectedDay); };
+
+  el("micBtn").onclick = toggleMic;
+  if (!SR) el("micBtn").style.display = "none";
+
+  el("evSave").onclick = saveEvent;
+  el("evCancel").onclick = function(){ if (recognizing && recog) recog.stop(); closeOverlay("evOverlay"); };
+  el("evDelete").onclick = deleteEvent;
+  el("evNaver").onclick = naverRegisterCurrent;
+  el("fAllday").onchange = syncAllday;
+  el("fTitle").onkeydown = function(e){ if (e.key==="Enter") saveEvent(); };
+
+  el("btnMembers").onclick = function(){ renderMemList(); openOverlay("memOverlay"); };
+  el("memAdd").onclick = addMember;
+  el("memClose").onclick = function(){ closeOverlay("memOverlay"); };
+  el("memName").onkeydown = function(e){ if (e.key==="Enter") addMember(); };
+
+  el("btnExport").onclick = exportData;
+  el("btnImport").onclick = function(){ el("importFile").click(); };
+  el("importFile").onchange = function(){ if (this.files[0]) importData(this.files[0]); this.value=""; };
+  el("btnNaver").onclick = naverConnect;
+
+  el("attAddBtn").onclick = function(){ el("attInput").click(); };
+  el("attInput").onchange = function(){ if (this.files && this.files.length) addModalFiles(this.files); this.value=""; };
+
+  el("todoAdd").onclick = addTodo;
+  el("todoInput").onkeydown = function(e){ if (e.key==="Enter") addTodo(); };
+
+  el("stAdd").onclick = addStudy;
+  el("stSubject").onkeydown = function(e){ if (e.key==="Enter") el("stContent").focus(); };
+  el("stContent").onkeydown = function(e){ if (e.key==="Enter") addStudy(); };
+  el("stMin").onkeydown = function(e){ if (e.key==="Enter") addStudy(); };
+  el("stGoalWeek").oninput = saveGoalWeek;
+  el("stGoalMonth").oninput = saveGoalMonth;
+  el("stMind").oninput = saveMind;
+  buildMindEmojis();
+  el("stTaskAdd").onclick = addStudyTask;
+  el("stTaskInput").onkeydown = function(e){ if (e.key==="Enter") addStudyTask(); };
+  el("stSpendAdd").onclick = addSpend;
+  el("stSpendItem").onkeydown = function(e){ if (e.key==="Enter") el("stSpendAmt").focus(); };
+  el("stSpendAmt").onkeydown = function(e){ if (e.key==="Enter") addSpend(); };
+  el("stThanks").oninput = saveThanks;
+
+  el("searchInput").oninput = function(){ searchQuery = this.value; renderList(); };
+  el("searchClear").onclick = function(){ searchQuery=""; el("searchInput").value=""; renderList(); el("searchInput").focus(); };
+
+  document.querySelectorAll(".overlay").forEach(function(ov){ ov.addEventListener("click", function(e){ if (e.target===ov) ov.classList.remove("open"); }); });
+  document.addEventListener("keydown", function(e){ if (e.key==="Escape") document.querySelectorAll(".overlay.open").forEach(function(o){ o.classList.remove("open"); }); });
+
+  // ---------- Init ----------
+  renderDow(); renderMembers(); render(); initNaver(); initSync();
+
+  // PWA: 서비스워커 등록 (홈화면/바탕화면 설치 + 오프라인)
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
+  }
+})();
+</script>
+</body>
+</html>
