@@ -1763,7 +1763,11 @@
   el("evDelete").onclick = deleteEvent;
   el("evNaver").onclick = naverRegisterCurrent;
   el("fAllday").onchange = syncAllday;
-  el("fAnniv").onchange = syncAnniv;
+  el("fAnniv").onchange = function(){
+    syncAnniv();
+    // 기념일은 공통 일정 → 켤 때 전체 구성원 자동 선택
+    if (el("fAnniv").checked) renderMemberPicker(state.members.map(function(m){ return m.id; }));
+  };
   el("fTitle").onkeydown = function(e){ if (e.key==="Enter") saveEvent(); };
 
   el("btnMembers").onclick = function(){ renderMemList(); openOverlay("memOverlay"); };
