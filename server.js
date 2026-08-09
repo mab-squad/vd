@@ -246,6 +246,29 @@ async function createNaverSchedule(accessToken, icsString) {
 
 // ---------- 라우트 ----------
 
+// Firebase 클라이언트 설정 (실시간 동기화용) — 값은 Render 환경변수로 주입
+app.get("/api/firebase-config", (req, res) => {
+  const {
+    FIREBASE_API_KEY,
+    FIREBASE_AUTH_DOMAIN,
+    FIREBASE_DATABASE_URL,
+    FIREBASE_PROJECT_ID,
+    FIREBASE_APP_ID,
+  } = process.env;
+  const configured = Boolean(FIREBASE_API_KEY && FIREBASE_DATABASE_URL);
+  if (!configured) return res.json({ configured: false });
+  res.json({
+    configured: true,
+    config: {
+      apiKey: FIREBASE_API_KEY,
+      authDomain: FIREBASE_AUTH_DOMAIN || "",
+      databaseURL: FIREBASE_DATABASE_URL,
+      projectId: FIREBASE_PROJECT_ID || "",
+      appId: FIREBASE_APP_ID || "",
+    },
+  });
+});
+
 // 연결 상태
 app.get("/api/naver/status", (req, res) => {
   res.json({

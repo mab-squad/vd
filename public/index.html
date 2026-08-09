@@ -276,6 +276,7 @@
   <header class="top">
     <h1>📅 우리 가족 일정표</h1>
     <span class="grow"></span>
+    <span id="syncBadge" title="실시간 동기화 켜짐" style="display:none;font-size:18px;align-self:center">☁️</span>
     <button class="btn" id="btnNaver" title="네이버 캘린더 연결" style="display:none"></button>
     <button class="btn icon" id="btnExport" title="백업 내보내기">⬇️</button>
     <button class="btn icon" id="btnImport" title="백업 가져오기">⬆️</button>
@@ -551,8 +552,14 @@
       return d;
     } catch (e) { return defaultState(); }
   }
-  function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+  function rawSave() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+  function save() { rawSave(); scheduleSync(); }
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  // 실시간 동기화 상태
+  var syncEnabled = false, syncRef = null, applyingRemote = false, pushTimer = null, lastApplied = 0;
+  var deviceId = localStorage.getItem("fs_device") || (Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+  localStorage.setItem("fs_device", deviceId);
 
   // Date helpers
   function startOfDay(d) { var x = new Date(d); x.setHours(0,0,0,0); return x; }
@@ -1558,6 +1565,84 @@
     try { recog.start(); } catch (e) {}
   }
 
+  // ---------- Cloud sync (Firebase 실시간 동기화) ----------
+  function loadScript(src) {
+    return new Promise(function(res, rej){ var s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+  }
+  function syncPayload() {
+    return {
+      data: {
+        members: state.members, events: state.events, todos: state.todos,
+        study: state.study, studyTasks: state.studyTasks,
+        studyGoals: state.studyGoals, studyGoalsWeek: state.studyGoalsWeek, studyGoalsMonth: state.studyGoalsMonth,
+        studyMind: state.studyMind, studySpend: state.studySpend, studyThanks: state.studyThanks
+      },
+      updatedAt: Date.now(), deviceId: deviceId
+    };
+  }
+  function pushNow() {
+    if (!syncEnabled || !syncRef) return;
+    var p = syncPayload(); lastApplied = p.updatedAt;
+    try { syncRef.set(p).catch(function(){}); } catch (e) {}
+  }
+  function scheduleSync() {
+    if (!syncEnabled || applyingRemote) return;
+    if (pushTimer) clearTimeout(pushTimer);
+    pushTimer = setTimeout(pushNow, 800);
+  }
+  function applyRemote(val) {
+    applyingRemote = true;
+    var d = val.data || {};
+    if (d.members) state.members = d.members;
+    state.events = d.events || [];
+    state.todos = d.todos || [];
+    state.study = d.study || [];
+    state.studyTasks = d.studyTasks || [];
+    state.studyGoals = d.studyGoals || {};
+    state.studyGoalsWeek = d.studyGoalsWeek || {};
+    state.studyGoalsMonth = d.studyGoalsMonth || {};
+    state.studyMind = d.studyMind || {};
+    state.studySpend = d.studySpend || [];
+    state.studyThanks = d.studyThanks || {};
+    lastApplied = val.updatedAt || Date.now();
+    rawSave();
+    applyingRemote = false;
+    activeFilter = null;
+    renderMembers(); render();
+  }
+  function initSync() {
+    fetch("/api/firebase-config", { credentials: "same-origin" })
+      .then(function(r){ return r.ok ? r.json() : { configured:false }; })
+      .then(function(d){ if (d && d.configured && d.config) startSync(d.config); })
+      .catch(function(){});
+  }
+  function startSync(cfg) {
+    var base = "https://www.gstatic.com/firebasejs/10.12.2/";
+    loadScript(base + "firebase-app-compat.js")
+      .then(function(){ return loadScript(base + "firebase-auth-compat.js"); })
+      .then(function(){ return loadScript(base + "firebase-database-compat.js"); })
+      .then(function(){
+        firebase.initializeApp(cfg);
+        var go = function(){
+          syncRef = firebase.database().ref("familyState");
+          syncEnabled = true;
+          el("syncBadge").style.display = "";
+          var first = true;
+          syncRef.on("value", function(snap){
+            var val = snap.val();
+            if (first) { first = false; if (!val) { pushNow(); return; } }
+            if (!val || !val.data) return;
+            if (val.deviceId === deviceId) return;         // 내 기기가 쓴 것(에코) 무시
+            if ((val.updatedAt || 0) <= lastApplied) return; // 오래된 것 무시
+            applyRemote(val);
+          }, function(){ syncEnabled = false; el("syncBadge").style.display = "none"; });
+        };
+        // 익명 로그인 시도(활성화된 경우) 후 연결 — 실패해도 진행
+        try { firebase.auth().signInAnonymously().then(go).catch(go); } catch (e) { go(); }
+      })
+      .catch(function(){});
+  }
+
   // ---------- Overlays / utils ----------
   function openOverlay(id){ el(id).classList.add("open"); }
   function closeOverlay(id){ el(id).classList.remove("open"); }
@@ -1629,7 +1714,7 @@
   document.addEventListener("keydown", function(e){ if (e.key==="Escape") document.querySelectorAll(".overlay.open").forEach(function(o){ o.classList.remove("open"); }); });
 
   // ---------- Init ----------
-  renderDow(); renderMembers(); render(); initNaver();
+  renderDow(); renderMembers(); render(); initNaver(); initSync();
 
   // PWA: 서비스워커 등록 (홈화면/바탕화면 설치 + 오프라인)
   if ("serviceWorker" in navigator) {
