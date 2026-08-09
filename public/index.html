@@ -4,6 +4,12 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#4f46e5" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="가족일정" />
+<meta name="mobile-web-app-capable" content="yes" />
 <title>우리 가족 일정표</title>
 <style>
   :root {
@@ -212,6 +218,8 @@
   .study-add .st-min { width: 64px; }
   .study-add2 { display: flex; gap: 8px; margin-bottom: 6px; }
   .study-add2 input { flex: 1; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); }
+  .study-add2 .st-amt { flex: none; width: 120px; }
+  .st-item .st-amt-view { flex: none; font-variant-numeric: tabular-nums; font-weight: 600; }
   .study-list { padding: 0; }
   .st-item { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border-soft); }
   .st-item:last-child { border-bottom: 0; }
@@ -353,6 +361,21 @@
         <button class="btn primary" id="stTaskAdd">추가</button>
       </div>
       <div class="study-list" id="taskList"></div>
+    </div>
+
+    <div class="study-sec">
+      <div class="sec-h">💰 오늘의 소비 <span class="sec-sub" id="spendFoot"></span></div>
+      <div class="study-add2">
+        <input id="stSpendItem" placeholder="쓴 곳 (예: 문구점)" autocomplete="off" />
+        <input id="stSpendAmt" class="st-amt" type="number" min="0" inputmode="numeric" placeholder="금액(원)" />
+        <button class="btn primary" id="stSpendAdd">추가</button>
+      </div>
+      <div class="study-list" id="spendList"></div>
+    </div>
+
+    <div class="study-sec">
+      <div class="sec-h">🙏 감사일기</div>
+      <textarea id="stThanks" class="sec-textarea" placeholder="오늘 감사한 일을 적어보세요 (예: 엄마가 맛있는 저녁을 해주셨다)"></textarea>
     </div>
   </div>
 
@@ -501,7 +524,9 @@
       studyGoals: {},      // (구버전 호환용, 미사용)
       studyGoalsWeek: {},  // 주간 목표 (구성원|주시작일)
       studyGoalsMonth: {}, // 월간 목표 (구성원|YYYY-MM)
-      studyMind: {}        // 오늘의 마음가짐 (구성원|날짜별)
+      studyMind: {},       // 오늘의 마음가짐 (구성원|날짜별)
+      studySpend: [],      // 오늘의 소비 (구성원+날짜별)
+      studyThanks: {}      // 감사일기 (구성원|날짜별)
     };
   }
   function load() {
@@ -517,6 +542,8 @@
       if (!d.studyGoalsWeek) d.studyGoalsWeek = {};
       if (!d.studyGoalsMonth) d.studyGoalsMonth = {};
       if (!d.studyMind) d.studyMind = {};
+      if (!d.studySpend) d.studySpend = [];
+      if (!d.studyThanks) d.studyThanks = {};
       // 구버전(단일 memberId) → 다중 memberIds 마이그레이션
       d.events.forEach(function(ev){
         if (!ev.memberIds) ev.memberIds = ev.memberId ? [ev.memberId] : [];
@@ -958,9 +985,40 @@
     el("stGoalWeek").value = state.studyGoalsWeek[studyWeekKey()] || "";
     el("stGoalMonth").value = state.studyGoalsMonth[studyMonthKey()] || "";
     el("stMind").value = (state.studyMind && state.studyMind[studyMindKey()]) || "";
+    el("stThanks").value = (state.studyThanks && state.studyThanks[studyMindKey()]) || "";
     renderStudyPlan();
     renderStudyTasks();
+    renderStudySpend();
   }
+  function wonFmt(n){ return (n || 0).toLocaleString("ko-KR"); }
+  function renderStudySpend() {
+    var key = ymd(selectedDay);
+    var items = state.studySpend.filter(function(s){ return s.memberId === selectedStudyChild && s.date === key; });
+    var list = el("spendList"); list.innerHTML = "";
+    if (!items.length) { var e = document.createElement("div"); e.className = "study-empty"; e.textContent = "소비 내역이 없어요."; list.appendChild(e); }
+    var total = 0;
+    items.forEach(function(s){
+      total += (parseInt(s.amount, 10) || 0);
+      var row = document.createElement("div"); row.className = "st-item";
+      var body = document.createElement("div"); body.className = "st-body"; body.innerHTML = '<div class="stc">'+escapeHtml(s.item || "소비")+'</div>';
+      var amt = document.createElement("span"); amt.className = "st-amt-view"; amt.textContent = wonFmt(s.amount) + "원";
+      var del = document.createElement("button"); del.className = "del"; del.textContent = "✕";
+      del.onclick = function(){ state.studySpend = state.studySpend.filter(function(x){ return x.id !== s.id; }); save(); renderStudySpend(); };
+      row.appendChild(body); row.appendChild(amt); row.appendChild(del);
+      list.appendChild(row);
+    });
+    el("spendFoot").textContent = items.length ? ("합계 " + wonFmt(total) + "원") : "";
+  }
+  function addSpend() {
+    var item = el("stSpendItem").value.trim();
+    var amt = parseInt(el("stSpendAmt").value, 10);
+    if (isNaN(amt) || amt < 0) { el("stSpendAmt").focus(); return; }
+    if (!selectedStudyChild) selectedStudyChild = defaultStudyChild();
+    state.studySpend.push({ id: uid(), memberId: selectedStudyChild, date: ymd(selectedDay), item: item || "소비", amount: amt });
+    el("stSpendItem").value = ""; el("stSpendAmt").value = "";
+    save(); renderStudySpend(); el("stSpendItem").focus();
+  }
+  function saveThanks() { if (!selectedStudyChild) return; state.studyThanks[studyMindKey()] = el("stThanks").value; save(); }
   function renderStudyPlan() {
     var m = memberById(selectedStudyChild), key = ymd(selectedDay);
     var items = state.study.filter(function(s){ return s.memberId === selectedStudyChild && s.date === key; });
@@ -1324,7 +1382,7 @@
   function exportData() {
     var getAtts = IDB_OK ? idbAll().catch(function(){ return []; }) : Promise.resolve([]);
     getAtts.then(function(atts){
-      var out = { members: state.members, events: state.events, todos: state.todos, study: state.study, studyTasks: state.studyTasks, studyGoals: state.studyGoals, studyGoalsWeek: state.studyGoalsWeek, studyGoalsMonth: state.studyGoalsMonth, studyMind: state.studyMind, attachments: atts };
+      var out = { members: state.members, events: state.events, todos: state.todos, study: state.study, studyTasks: state.studyTasks, studyGoals: state.studyGoals, studyGoalsWeek: state.studyGoalsWeek, studyGoalsMonth: state.studyGoalsMonth, studyMind: state.studyMind, studySpend: state.studySpend, studyThanks: state.studyThanks, attachments: atts };
       var blob = new Blob([JSON.stringify(out)], { type: "application/json" });
       var url = URL.createObjectURL(blob);
       var a = document.createElement("a"); a.href = url; a.download = "가족일정_" + ymd(new Date()) + ".json"; a.click();
@@ -1344,7 +1402,7 @@
         state = { members: d.members, events: d.events, todos: d.todos, study: d.study,
           studyTasks: d.studyTasks || [], studyGoals: d.studyGoals || {},
           studyGoalsWeek: d.studyGoalsWeek || {}, studyGoalsMonth: d.studyGoalsMonth || {},
-          studyMind: d.studyMind || {} };
+          studyMind: d.studyMind || {}, studySpend: d.studySpend || [], studyThanks: d.studyThanks || {} };
         activeFilter = null; save();
         var restore = IDB_OK
           ? idbClear().then(function(){ return Promise.all(atts.map(function(a){ return idbPut(a); })); })
@@ -1559,6 +1617,10 @@
   buildMindEmojis();
   el("stTaskAdd").onclick = addStudyTask;
   el("stTaskInput").onkeydown = function(e){ if (e.key==="Enter") addStudyTask(); };
+  el("stSpendAdd").onclick = addSpend;
+  el("stSpendItem").onkeydown = function(e){ if (e.key==="Enter") el("stSpendAmt").focus(); };
+  el("stSpendAmt").onkeydown = function(e){ if (e.key==="Enter") addSpend(); };
+  el("stThanks").oninput = saveThanks;
 
   el("searchInput").oninput = function(){ searchQuery = this.value; renderList(); };
   el("searchClear").onclick = function(){ searchQuery=""; el("searchInput").value=""; renderList(); el("searchInput").focus(); };
@@ -1568,6 +1630,11 @@
 
   // ---------- Init ----------
   renderDow(); renderMembers(); render(); initNaver();
+
+  // PWA: 서비스워커 등록 (홈화면/바탕화면 설치 + 오프라인)
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
+  }
 })();
 </script>
 </body>
