@@ -557,7 +557,7 @@
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
   // 실시간 동기화 상태
-  var syncEnabled = false, syncRef = null, applyingRemote = false, pushTimer = null, lastApplied = 0;
+  var syncEnabled = false, syncRef = null, attRef = null, applyingRemote = false, pushTimer = null, lastApplied = 0;
   var deviceId = localStorage.getItem("fs_device") || (Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
   localStorage.setItem("fs_device", deviceId);
 
@@ -1206,7 +1206,9 @@
     return new Blob([arr], { type: mime });
   }
   function viewAttachment(a){
-    var get = a.dataUrl ? Promise.resolve(a.dataUrl) : idbGet(a.id).then(function(r){ return r && r.dataUrl; });
+    var get = a.dataUrl
+      ? Promise.resolve(a.dataUrl)
+      : idbGet(a.id).then(function(r){ return r && r.dataUrl; }).then(function(du){ return du ? du : attachFetch(a.id); });
     get.then(function(dataUrl){
       if (!dataUrl) { alert("첨부를 불러올 수 없습니다."); return; }
       var url = URL.createObjectURL(dataUrlToBlob(dataUrl));
@@ -1313,8 +1315,8 @@
       attachments: modalAttachments.map(function(a){ return { id:a.id, name:a.name, type:a.type, size:a.size, thumb:a.thumb||null }; })
     };
     var ops = [];
-    modalAttachments.forEach(function(a){ if (a._new) ops.push(idbPut({ id:a.id, eventId:id, name:a.name, type:a.type, dataUrl:a.dataUrl })); });
-    modalRemovedAtt.forEach(function(rid){ ops.push(idbDel(rid)); });
+    modalAttachments.forEach(function(a){ if (a._new) { ops.push(idbPut({ id:a.id, eventId:id, name:a.name, type:a.type, dataUrl:a.dataUrl })); attachPush({ id:a.id, name:a.name, type:a.type, dataUrl:a.dataUrl }); } });
+    modalRemovedAtt.forEach(function(rid){ ops.push(idbDel(rid)); attachRemove(rid); });
     Promise.all(ops).catch(function(){}).then(function(){
       if (editingId) {
         for (var i=0;i<state.events.length;i++) if (state.events[i].id===editingId) state.events[i] = data;
@@ -1329,7 +1331,7 @@
     if (!confirm("이 일정을 삭제할까요?")) return;
     var ev = null;
     for (var i=0;i<state.events.length;i++) if (state.events[i].id===editingId) ev = state.events[i];
-    if (ev && ev.attachments) ev.attachments.forEach(function(a){ idbDel(a.id); });
+    if (ev && ev.attachments) ev.attachments.forEach(function(a){ idbDel(a.id); attachRemove(a.id); });
     state.events = state.events.filter(function(e){ return e.id !== editingId; });
     save(); closeOverlay("evOverlay"); render();
   }
@@ -1590,6 +1592,35 @@
     if (pushTimer) clearTimeout(pushTimer);
     pushTimer = setTimeout(pushNow, 800);
   }
+  // 첨부(사진·파일)를 클라우드에 개별 노드로 저장/조회/삭제
+  function attachPush(rec) {
+    if (!syncEnabled || !attRef || !rec || !rec.dataUrl) return;
+    try { attRef.child(rec.id).set({ name: rec.name, type: rec.type, dataUrl: rec.dataUrl, ts: Date.now() }).catch(function(){}); } catch (e) {}
+  }
+  function attachRemove(id) {
+    if (!syncEnabled || !attRef) return;
+    try { attRef.child(id).remove().catch(function(){}); } catch (e) {}
+  }
+  function attachFetch(id) {
+    if (!syncEnabled || !attRef) return Promise.resolve(null);
+    return attRef.child(id).once("value").then(function(s){
+      var v = s.val();
+      if (v && v.dataUrl) { idbPut({ id: id, name: v.name, type: v.type, dataUrl: v.dataUrl }).catch(function(){}); return v.dataUrl; }
+      return null;
+    }).catch(function(){ return null; });
+  }
+  // 기존 로컬 첨부를 클라우드로 1회 백필(없는 것만 업로드)
+  function backfillAttachments() {
+    if (!syncEnabled || !attRef || !IDB_OK) return;
+    idbAll().then(function(list){
+      list.forEach(function(rec){
+        if (!rec.dataUrl) return;
+        attRef.child(rec.id).once("value").then(function(s){
+          if (!s.exists()) attRef.child(rec.id).set({ name: rec.name, type: rec.type, dataUrl: rec.dataUrl, ts: Date.now() }).catch(function(){});
+        }).catch(function(){});
+      });
+    }).catch(function(){});
+  }
   function applyRemote(val) {
     applyingRemote = true;
     var d = val.data || {};
@@ -1625,8 +1656,10 @@
         firebase.initializeApp(cfg);
         var go = function(){
           syncRef = firebase.database().ref("familyState");
+          attRef = firebase.database().ref("attachments");
           syncEnabled = true;
           el("syncBadge").style.display = "";
+          backfillAttachments();
           var first = true;
           syncRef.on("value", function(snap){
             var val = snap.val();
