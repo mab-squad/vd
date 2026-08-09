@@ -205,6 +205,7 @@
   .study-sec { padding: 12px 14px; border-top: 1px solid var(--border-soft); }
   .sec-h { font-weight: 700; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
   .sec-sub { font-weight: 400; font-size: 12px; color: var(--muted); }
+  .saved { font-weight: 500; font-size: 12px; color: #16a34a; opacity: 0; transition: opacity .3s; }
   .sec-textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); resize: vertical; min-height: 40px; }
   .goal-row { margin-bottom: 8px; }
   .goal-lb { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
@@ -328,7 +329,7 @@
     <div class="study-kids" id="studyKids"></div>
 
     <div class="study-sec">
-      <div class="sec-h">🎯 나의 목표</div>
+      <div class="sec-h">🎯 나의 목표 <span class="saved" id="goalSaved"></span></div>
       <div class="goal-row">
         <label class="goal-lb" id="goalWeekLb">이번 주</label>
         <textarea id="stGoalWeek" class="sec-textarea" placeholder="예: 영어 단어 100개 외우기"></textarea>
@@ -340,7 +341,7 @@
     </div>
 
     <div class="study-sec">
-      <div class="sec-h">💭 나의 오늘의 마음가짐</div>
+      <div class="sec-h">💭 나의 오늘의 마음가짐 <span class="saved" id="mindSaved"></span></div>
       <textarea id="stMind" class="sec-textarea" placeholder="예: 오늘은 집중해서 30분씩 공부하자!"></textarea>
       <div class="mind-emojis" id="mindEmojis"></div>
     </div>
@@ -376,7 +377,7 @@
     </div>
 
     <div class="study-sec">
-      <div class="sec-h">🙏 감사일기</div>
+      <div class="sec-h">🙏 감사일기 <span class="saved" id="thanksSaved"></span></div>
       <textarea id="stThanks" class="sec-textarea" placeholder="오늘 감사한 일을 적어보세요 (예: 엄마가 맛있는 저녁을 해주셨다)"></textarea>
     </div>
   </div>
@@ -1026,7 +1027,7 @@
     el("stSpendItem").value = ""; el("stSpendAmt").value = "";
     save(); renderStudySpend(); el("stSpendItem").focus();
   }
-  function saveThanks() { if (!selectedStudyChild) return; state.studyThanks[studyMindKey()] = el("stThanks").value; save(); }
+  function saveThanks() { if (!selectedStudyChild) return; state.studyThanks[studyMindKey()] = el("stThanks").value; save(); flashSaved("thanksSaved"); }
   function renderStudyPlan() {
     var m = memberById(selectedStudyChild), key = ymd(selectedDay);
     var items = state.study.filter(function(s){ return s.memberId === selectedStudyChild && s.date === key; });
@@ -1066,9 +1067,16 @@
     var done = items.filter(function(s){ return s.done; }).length;
     el("taskFoot").textContent = items.length ? (done + "/" + items.length + " 완료") : "";
   }
-  function saveGoalWeek() { if (!selectedStudyChild) return; state.studyGoalsWeek[studyWeekKey()] = el("stGoalWeek").value; save(); }
-  function saveGoalMonth() { if (!selectedStudyChild) return; state.studyGoalsMonth[studyMonthKey()] = el("stGoalMonth").value; save(); }
-  function saveMind() { if (!selectedStudyChild) return; state.studyMind[studyMindKey()] = el("stMind").value; save(); }
+  var savedTimers = {};
+  function flashSaved(id) {
+    var n = el(id); if (!n) return;
+    n.textContent = "✓ 저장됨"; n.style.opacity = "1";
+    if (savedTimers[id]) clearTimeout(savedTimers[id]);
+    savedTimers[id] = setTimeout(function(){ n.style.opacity = "0"; }, 1300);
+  }
+  function saveGoalWeek() { if (!selectedStudyChild) return; state.studyGoalsWeek[studyWeekKey()] = el("stGoalWeek").value; save(); flashSaved("goalSaved"); }
+  function saveGoalMonth() { if (!selectedStudyChild) return; state.studyGoalsMonth[studyMonthKey()] = el("stGoalMonth").value; save(); flashSaved("goalSaved"); }
+  function saveMind() { if (!selectedStudyChild) return; state.studyMind[studyMindKey()] = el("stMind").value; save(); flashSaved("mindSaved"); }
   var MIND_EMOJIS = ["😊","💪","🔥","😤","😴","✨","🙂","😢"];
   function buildMindEmojis() {
     var wrap = el("mindEmojis"); if (!wrap || wrap.childElementCount) return;
