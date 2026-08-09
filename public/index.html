@@ -233,6 +233,9 @@
   .memberpick .chip.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
   .modal-actions { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
   .allday { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .mic { margin-left: 8px; font-size: 12px; font-weight: 600; border: 1px solid var(--border); background: var(--panel); border-radius: 999px; padding: 2px 10px; cursor: pointer; color: var(--accent); }
+  .mic.rec { background: #ef4444; color: #fff; border-color: transparent; }
+  .mic-status { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 1em; }
 
   /* Attachments */
   .attach-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
@@ -336,8 +339,9 @@
   <div class="modal">
     <h2 id="evModalTitle">일정 추가</h2>
     <div class="field">
-      <label>제목</label>
+      <label>제목 <button type="button" id="micBtn" class="mic" title="음성으로 입력">🎤 말로 입력</button></label>
       <input type="text" id="fTitle" placeholder="예: 윤호 태권도" autocomplete="off" />
+      <div id="micStatus" class="mic-status"></div>
     </div>
     <div class="field">
       <label>가족 구성원</label>
@@ -1101,6 +1105,7 @@
     el("evDelete").classList.add("hidden");
     modalAttachments = []; modalRemovedAtt = []; renderModalAttach();
     el("attField").style.display = IDB_OK ? "" : "none";
+    el("micStatus").textContent = "";
     syncAllday(); openOverlay("evOverlay");
     setTimeout(function(){ el("fTitle").focus(); }, 50);
   }
@@ -1123,6 +1128,7 @@
     modalAttachments = (ev.attachments || []).map(function(a){ return { id:a.id, name:a.name, type:a.type, size:a.size, thumb:a.thumb||null }; });
     modalRemovedAtt = [];
     el("attField").style.display = IDB_OK ? "" : "none";
+    el("micStatus").textContent = "";
     renderModalAttach();
     syncAllday(); openOverlay("evOverlay");
   }
@@ -1297,6 +1303,103 @@
       .finally(function(){ btn.disabled = false; btn.textContent = prev; });
   }
 
+  // ---------- Speech input (STT + 규칙 기반 파싱) ----------
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var recog = null, recognizing = false;
+  var KHOUR = {"한":1,"두":2,"세":3,"네":4,"다섯":5,"여섯":6,"일곱":7,"여덟":8,"여덜":8,"아홉":9,"열":10,"열한":11,"열두":12};
+
+  function parseTimes(t) {
+    var re = /(오전|오후|아침|저녁|낮|밤)?\s*(\d{1,2}|열두|열한|열|한|두|세|네|다섯|여섯|일곱|여덟|여덜|아홉)\s*시\s*(반|(\d{1,2})\s*분)?/g;
+    var out = [], m;
+    while (m = re.exec(t)) {
+      var ap = m[1], hr = m[2];
+      var h = /^\d+$/.test(hr) ? +hr : KHOUR[hr];
+      var min = 0;
+      if (m[3] === "반") min = 30; else if (m[4]) min = +m[4];
+      if (ap==="오후"||ap==="저녁"||ap==="밤"||ap==="낮") { if (h < 12) h += 12; }
+      else if (ap==="오전"||ap==="아침") { if (h === 12) h = 0; }
+      if (h > 23) h = 23; if (min > 59) min = 59;
+      out.push({ h:h, m:min, raw:m[0] });
+    }
+    if (/정오/.test(t)) out.push({ h:12, m:0, raw:"정오" });
+    if (/자정/.test(t)) out.push({ h:0, m:0, raw:"자정" });
+    return out;
+  }
+  function parseDateSpeech(t) {
+    var today = startOfDay(new Date()), m;
+    if (m = t.match(/오늘|내일|모레|글피/)) {
+      var w = m[0], d = w==="오늘"?0:w==="내일"?1:w==="모레"?2:3;
+      return { date: ymd(addDays(today, d)), raw: w };
+    }
+    var wd = t.match(/(다음\s*주|담주|이번\s*주)?\s*([월화수목금토일])요일/);
+    if (wd) {
+      var map = {"일":0,"월":1,"화":2,"수":3,"목":4,"금":5,"토":6}, target = map[wd[2]];
+      var diff = (target - today.getDay() + 7) % 7, base = addDays(today, diff);
+      if (/다음|담/.test(wd[1] || "")) base = addDays(base, 7);
+      return { date: ymd(base), raw: wd[0].trim() };
+    }
+    if (m = t.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/)) return { date: today.getFullYear()+"-"+pad(+m[1])+"-"+pad(+m[2]), raw: m[0] };
+    if (m = t.match(/(\d{1,2})\s*[\/.]\s*(\d{1,2})/)) return { date: today.getFullYear()+"-"+pad(+m[1])+"-"+pad(+m[2]), raw: m[0] };
+    if (m = t.match(/(\d{1,2})\s*일/)) {
+      var da = +m[1], dt = new Date(today.getFullYear(), today.getMonth(), da);
+      if (dt < today) dt = new Date(today.getFullYear(), today.getMonth()+1, da);
+      return { date: ymd(dt), raw: m[0] };
+    }
+    return null;
+  }
+  function parseSpeech(text) {
+    var t = " " + text + " ";
+    var res = { title:"", memberIds:[], allday:false, date:null, time:null, endTime:null };
+    var consumed = [], mm;
+
+    if (mm = t.match(/전체|온\s*가족|우리\s*가족|다\s*같이|다\s*함께|모두/)) { res.memberIds = state.members.map(function(x){ return x.id; }); consumed.push(mm[0]); }
+    state.members.forEach(function(x){ if (x.name && t.indexOf(x.name) >= 0) { if (res.memberIds.indexOf(x.id) < 0) res.memberIds.push(x.id); consumed.push(x.name); } });
+
+    if (mm = t.match(/하루\s*종일|온종일|종일/)) { res.allday = true; consumed.push(mm[0]); }
+
+    var dp = parseDateSpeech(t);
+    if (dp) { res.date = dp.date; consumed.push(dp.raw); }
+
+    if (!res.allday) {
+      var times = parseTimes(t);
+      if (times.length) {
+        res.time = pad(times[0].h) + ":" + pad(times[0].m);
+        if (times.length >= 2) res.endTime = pad(times[1].h) + ":" + pad(times[1].m);
+        times.forEach(function(x){ consumed.push(x.raw); });
+      }
+    }
+
+    var title = text;
+    consumed.forEach(function(s){ if (s) title = title.split(s).join(" "); });
+    title = title.replace(/(일정을?|추가해?\s*줘?|등록해?\s*줘?|만들어?\s*줘?|잡아?\s*줘?|좀|에다가|에다|부터|까지|에서|~|–|-)/g, " ");
+    title = title.replace(/\s+에\s+/g, " ").replace(/^\s*에\s+/, " ");
+    title = title.replace(/\s+/g, " ").trim();
+    res.title = title;
+    return res;
+  }
+  function applyParsed(p) {
+    if (p.memberIds && p.memberIds.length) renderMemberPicker(p.memberIds);
+    if (p.allday) el("fAllday").checked = true; else if (p.time) el("fAllday").checked = false;
+    syncAllday();
+    if (p.date) { el("fDate").value = p.date; if (!el("fEndDate").value || el("fEndDate").value < p.date) el("fEndDate").value = p.date; }
+    if (!p.allday) {
+      if (p.time) el("fTime").value = p.time;
+      if (p.endTime) el("fEndTime").value = p.endTime; else if (p.time) el("fEndTime").value = addHour(p.time);
+    }
+    if (p.title) el("fTitle").value = p.title;
+  }
+  function toggleMic() {
+    if (!SR) { alert("이 브라우저는 음성 인식을 지원하지 않습니다. (안드로이드 크롬/삼성인터넷 권장)"); return; }
+    if (recognizing) { if (recog) recog.stop(); return; }
+    recog = new SR(); recog.lang = "ko-KR"; recog.interimResults = true; recog.maxAlternatives = 1;
+    var finalText = "";
+    recog.onstart = function(){ recognizing = true; el("micBtn").classList.add("rec"); el("micBtn").textContent = "⏹ 듣는 중"; el("micStatus").textContent = "말씀하세요… (예: 내일 오후 3시 윤호 치과)"; };
+    recog.onresult = function(e){ var interim = ""; for (var i = e.resultIndex; i < e.results.length; i++){ var r = e.results[i]; if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript; } el("micStatus").textContent = (finalText + interim).trim(); };
+    recog.onerror = function(e){ el("micStatus").textContent = "인식 오류: " + e.error + (e.error === "not-allowed" ? " (마이크 권한을 허용해 주세요)" : ""); };
+    recog.onend = function(){ recognizing = false; el("micBtn").classList.remove("rec"); el("micBtn").textContent = "🎤 말로 입력"; var txt = (finalText || el("micStatus").textContent || "").trim(); if (txt) { applyParsed(parseSpeech(txt)); el("micStatus").textContent = "“" + txt + "” 인식됨 — 내용을 확인 후 저장하세요."; } };
+    try { recog.start(); } catch (e) {}
+  }
+
   // ---------- Overlays / utils ----------
   function openOverlay(id){ el(id).classList.add("open"); }
   function closeOverlay(id){ el(id).classList.remove("open"); }
@@ -1320,8 +1423,11 @@
   };
   el("fab").onclick = function(){ openNew(selectedDay); };
 
+  el("micBtn").onclick = toggleMic;
+  if (!SR) el("micBtn").style.display = "none";
+
   el("evSave").onclick = saveEvent;
-  el("evCancel").onclick = function(){ closeOverlay("evOverlay"); };
+  el("evCancel").onclick = function(){ if (recognizing && recog) recog.stop(); closeOverlay("evOverlay"); };
   el("evDelete").onclick = deleteEvent;
   el("evNaver").onclick = naverRegisterCurrent;
   el("fAllday").onchange = syncAllday;
