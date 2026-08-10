@@ -322,6 +322,8 @@
     <div class="search">
       <input type="text" id="searchInput" placeholder="일정 검색 (제목·메모·구성원)" autocomplete="off" />
       <button class="btn" id="searchClear">지우기</button>
+      <button class="btn" id="cleanMonth" title="반복 일정을 월간 달력에서 숨겨 화면을 정리합니다">🧹 반복 월간숨김</button>
+      <button class="btn" id="showAllMonth" title="모든 일정을 월간 달력에 다시 표시합니다">월간 모두표시</button>
       <button class="btn" id="bulkWeek" title="이번 주 일정을 네이버 캘린더에 한 번에 등록" style="display:none">📅 이번주→네이버</button>
       <button class="btn" id="bulkMonth" title="이번 달 일정을 네이버 캘린더에 한 번에 등록" style="display:none">📅 이번달→네이버</button>
     </div>
@@ -1798,6 +1800,21 @@
     for (var d = new Date(startD); d <= endD; d = addDays(d, 1)) { if (occursOn(ev, d)) return true; }
     return false;
   }
+  function bulkMonthVisibility(hideRepeating) {
+    var n = 0;
+    if (hideRepeating) {
+      var count = state.events.filter(function(ev){ return ["daily","weekly","biweekly","monthly"].indexOf(ev.repeat) >= 0 && ev.showMonth !== false; }).length;
+      if (!count) { showToast("월간에서 숨길 반복 일정이 없어요"); return; }
+      if (!confirm("반복 일정 " + count + "건을 월간 달력에서 숨길까요? (주간·당일·목록에는 계속 표시)")) return;
+      state.events.forEach(function(ev){ if (["daily","weekly","biweekly","monthly"].indexOf(ev.repeat) >= 0 && ev.showMonth !== false) { ev.showMonth = false; n++; } });
+      showToast(n + "건을 월간에서 숨겼어요");
+    } else {
+      state.events.forEach(function(ev){ if (ev.showMonth === false) { ev.showMonth = true; n++; } });
+      if (!n) { showToast("이미 모두 표시 중이에요"); return; }
+      showToast(n + "건을 월간에 다시 표시했어요");
+    }
+    save(); render();
+  }
   function bulkNaver(kind) {
     if (!naver.connected) { alert("먼저 상단 '네이버 연결'로 로그인해 주세요."); return; }
     var today = startOfDay(new Date()), startD, endD, label;
@@ -1904,6 +1921,8 @@
 
   el("searchInput").oninput = function(){ searchQuery = this.value; renderList(); };
   el("searchClear").onclick = function(){ searchQuery=""; el("searchInput").value=""; renderList(); el("searchInput").focus(); };
+  el("cleanMonth").onclick = function(){ bulkMonthVisibility(true); };
+  el("showAllMonth").onclick = function(){ bulkMonthVisibility(false); };
   el("bulkWeek").onclick = function(){ bulkNaver("week"); };
   el("bulkMonth").onclick = function(){ bulkNaver("month"); };
   el("fNaverSync").onchange = function(){ if (!this.disabled) { autoNaver = this.checked; localStorage.setItem("fs_autoNaver", autoNaver ? "1" : "0"); } };
