@@ -462,6 +462,14 @@
       <div class="colorpick" id="fColors"></div>
     </div>
     <div class="field">
+      <label>달력 표시</label>
+      <div style="display:flex;gap:18px;flex-wrap:wrap">
+        <label class="allday"><input type="checkbox" id="fShowMonth" checked /> 월간</label>
+        <label class="allday"><input type="checkbox" id="fShowWeek" checked /> 주간</label>
+      </div>
+      <div class="att-hint">체크를 끄면 해당 달력 보기에서 숨겨집니다. (당일 패널·목록에는 항상 표시)</div>
+    </div>
+    <div class="field">
       <label>메모</label>
       <textarea id="fNote" placeholder="장소, 준비물 등"></textarea>
     </div>
@@ -472,12 +480,11 @@
       <input type="file" id="attInput" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.hwp" multiple class="hidden" />
       <div class="att-hint">사진은 자동 압축됩니다. 첨부는 이 브라우저에 저장되며 백업에 포함됩니다. (파일당 15MB)</div>
     </div>
-    <div class="field" id="autoNaverField" style="display:none">
-      <label class="allday"><input type="checkbox" id="fAutoNaver" /> 새 일정 저장 시 자동으로 네이버 등록</label>
+    <div class="field" id="naverSyncField" style="display:none">
+      <label class="allday"><input type="checkbox" id="fNaverSync" /> 📅 네이버 캘린더에 반영 <span id="naverSyncStatus" class="att-hint" style="margin-left:6px"></span></label>
     </div>
     <div class="modal-actions">
       <button class="btn" id="evDelete" style="color:#ef4444">삭제</button>
-      <button class="btn" id="evNaver" title="이 일정을 네이버 캘린더에 등록" style="display:none">📅 네이버 등록</button>
       <span class="grow"></span>
       <button class="btn" id="evCancel">취소</button>
       <button class="btn primary" id="evSave">저장</button>
@@ -776,7 +783,7 @@
       num.textContent = day.getDate();
       cell.appendChild(num);
 
-      var evs = eventsOn(day);
+      var evs = eventsOn(day).filter(function(ev){ return ev.showMonth !== false; });
       for (var j=0;j<Math.min(evs.length, MAX);j++) cell.appendChild(monthEventEl(evs[j]));
       if (evs.length > MAX) {
         var more = document.createElement("div"); more.className = "more";
@@ -824,7 +831,7 @@
 
       var wbody = document.createElement("div"); wbody.className = "wbody";
       (function(dcopy){ wbody.onclick = function(e){ if (e.target===wbody) selectDay(dcopy); }; })(day);
-      eventsOn(day).forEach(function(ev){
+      eventsOn(day).filter(function(ev){ return ev.showWeek !== false; }).forEach(function(ev){
         var e = document.createElement("div");
         e.className = "wev"; e.setAttribute("style", evVars(ev));
         var t = ev.allday ? "종일" : (ev.time || "");
@@ -1345,6 +1352,8 @@
     el("fRepeat").value = "none";
     el("fNote").value = "";
     modalColor = null; renderColorPicker(); syncAnniv();
+    el("fShowMonth").checked = true; el("fShowWeek").checked = true;
+    el("fNaverSync").checked = autoNaver; el("fNaverSync").disabled = false; el("naverSyncStatus").textContent = "";
     renderMemberPicker(memberId ? [memberId] : (state.members[0] ? [state.members[0].id] : []));
     el("evDelete").classList.add("hidden");
     modalAttachments = []; modalRemovedAtt = []; renderModalAttach();
@@ -1369,6 +1378,12 @@
     el("fRepeat").value = ev.repeat || "none";
     el("fNote").value = ev.note || "";
     modalColor = ev.color || null; renderColorPicker(); syncAnniv();
+    el("fShowMonth").checked = ev.showMonth !== false;
+    el("fShowWeek").checked = ev.showWeek !== false;
+    var _sent = !!(state.naverSent && state.naverSent[ev.id]);
+    el("fNaverSync").checked = _sent ? true : autoNaver;
+    el("fNaverSync").disabled = _sent;
+    el("naverSyncStatus").textContent = _sent ? "(이미 반영됨)" : "";
     renderMemberPicker(ev.memberIds || (ev.memberId ? [ev.memberId] : []));
     el("evDelete").classList.remove("hidden");
     modalAttachments = (ev.attachments || []).map(function(a){ return { id:a.id, name:a.name, type:a.type, size:a.size, thumb:a.thumb||null }; });
@@ -1399,6 +1414,8 @@
       repeat: anniversary ? "yearly" : el("fRepeat").value,
       anniversary: anniversary,
       color: modalColor || "",
+      showMonth: el("fShowMonth").checked,
+      showWeek: el("fShowWeek").checked,
       note: el("fNote").value.trim(),
       attachments: modalAttachments.map(function(a){ return { id:a.id, name:a.name, type:a.type, size:a.size, thumb:a.thumb||null }; })
     };
@@ -1412,8 +1429,8 @@
       save(); closeOverlay("evOverlay");
       if (data.date) selectedDay = parseYmd(data.date);
       render();
-      // 새 일정 + 자동 등록 옵션 ON + 네이버 연결 시 자동 등록
-      if (isNew && autoNaver && naver.connected) registerEventToNaver(data);
+      // "네이버 캘린더에 반영" 체크 & 연결됨 & 아직 미반영이면 등록
+      if (naver.connected && el("fNaverSync").checked && !state.naverSent[data.id]) registerEventToNaver(data);
     });
   }
   function deleteEvent() {
@@ -1546,12 +1563,10 @@
     else { btn.style.display = ""; btn.textContent = naver.connected ? "네이버 ✓" : "네이버 연결";
       btn.title = naver.connected ? "네이버 캘린더 연결됨 (클릭 시 해제)" : "네이버 캘린더에 연결"; }
     var conn = (naver.available && naver.configured && naver.connected);
-    el("evNaver").style.display = conn ? "" : "none";
     var showBulk = conn ? "" : "none";
     if (el("bulkWeek")) el("bulkWeek").style.display = showBulk;
     if (el("bulkMonth")) el("bulkMonth").style.display = showBulk;
-    if (el("autoNaverField")) el("autoNaverField").style.display = conn ? "" : "none";
-    if (el("fAutoNaver")) el("fAutoNaver").checked = autoNaver;
+    if (el("naverSyncField")) el("naverSyncField").style.display = conn ? "" : "none";
   }
   function naverConnect() {
     if (!naver.connected) { window.location.href = "/api/naver/login"; }
@@ -1561,29 +1576,6 @@
         .then(function(){ naver.connected = false; updateNaverUI(); });
     }
   }
-  function naverRegisterCurrent() {
-    var title = el("fTitle").value.trim();
-    if (!title) { el("fTitle").focus(); return; }
-    var _allday = el("fAllday").checked;
-    var _end = el("fEndDate").value || el("fDate").value;
-    if (_allday && _end < el("fDate").value) _end = el("fDate").value;
-    var _et = el("fEndTime").value;
-    if (!_allday && (!_et || _et <= el("fTime").value)) _et = addHour(el("fTime").value);
-    var payload = { title: title, date: el("fDate").value, endDate: _allday ? _end : "", allday: _allday,
-      time: _allday ? "" : el("fTime").value, endTime: _allday ? "" : _et, repeat: el("fRepeat").value, note: el("fNote").value.trim() };
-    var btn = el("evNaver"); var prev = btn.textContent; btn.disabled = true; btn.textContent = "등록 중…";
-    fetch("/api/naver/schedule", { method: "POST", credentials: "same-origin",
-      headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
-      .then(function(r){ return r.json().then(function(b){ return { ok: r.ok, body: b }; }); })
-      .then(function(res){
-        if (res.ok && res.body.result === "success") { if (editingId) { state.naverSent[editingId] = Date.now(); save(); } alert("네이버 캘린더에 등록되었습니다."); }
-        else if (res.body && res.body.error === "not_connected") { naver.connected = false; updateNaverUI(); alert("네이버 연결이 만료되었습니다. 다시 연결해 주세요."); }
-        else alert("등록 실패: " + (res.body && res.body.message ? res.body.message : "알 수 없는 오류"));
-      })
-      .catch(function(){ alert("등록 중 네트워크 오류가 발생했습니다."); })
-      .finally(function(){ btn.disabled = false; btn.textContent = prev; });
-  }
-
   // ---------- Speech input (STT + 규칙 기반 파싱) ----------
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   var recog = null, recognizing = false;
@@ -1871,7 +1863,6 @@
   el("evSave").onclick = saveEvent;
   el("evCancel").onclick = function(){ if (recognizing && recog) recog.stop(); closeOverlay("evOverlay"); };
   el("evDelete").onclick = deleteEvent;
-  el("evNaver").onclick = naverRegisterCurrent;
   el("fAllday").onchange = syncAllday;
   el("fAnniv").onchange = function(){
     syncAnniv();
@@ -1915,7 +1906,7 @@
   el("searchClear").onclick = function(){ searchQuery=""; el("searchInput").value=""; renderList(); el("searchInput").focus(); };
   el("bulkWeek").onclick = function(){ bulkNaver("week"); };
   el("bulkMonth").onclick = function(){ bulkNaver("month"); };
-  el("fAutoNaver").onchange = function(){ autoNaver = this.checked; localStorage.setItem("fs_autoNaver", autoNaver ? "1" : "0"); };
+  el("fNaverSync").onchange = function(){ if (!this.disabled) { autoNaver = this.checked; localStorage.setItem("fs_autoNaver", autoNaver ? "1" : "0"); } };
 
   document.querySelectorAll(".overlay").forEach(function(ov){ ov.addEventListener("click", function(e){ if (e.target===ov) ov.classList.remove("open"); }); });
   document.addEventListener("keydown", function(e){ if (e.key==="Escape") document.querySelectorAll(".overlay.open").forEach(function(o){ o.classList.remove("open"); }); });
